@@ -1,0 +1,1 @@
+/usr/bin/cc -pthread -Wall -g   CMakeFiles/tp2_client.dir/client/client_thread.c.o CMakeFiles/tp2_client.dir/client/main.c.o CMakeFiles/tp2_client.dir/common/common.c.o  -o tp2_client 

@@ -1,0 +1,1 @@
+/usr/bin/cc -pthread -Wall -g   CMakeFiles/tp2_server.dir/server/main.c.o CMakeFiles/tp2_server.dir/server/server_thread.c.o CMakeFiles/tp2_server.dir/common/common.c.o  -o tp2_server 
