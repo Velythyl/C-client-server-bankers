@@ -59,7 +59,7 @@ void send_request(int client_id, int request_id, int socket_fd, int* head, int* 
             break;
         case WAIT:
             sleep((unsigned int) response[2]);
-            send_request(client_id, request_id, socket_fd, head, request);
+            send_request(client_id, request_id, socket_fd, head, request);  //TODO! on rouvre pas un socket! donc ca plante! au lieu, retourner le code et rappeler dans st code
             break;
     }
 
@@ -107,7 +107,7 @@ void *ct_code(void *param) {
         }
 
         int head[2] = {REQ, num_resources+1};
-        
+
         send_request(ct->id, request_id, socket, head, request);
 
         close(socket);
