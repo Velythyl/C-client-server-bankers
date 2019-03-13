@@ -25,7 +25,7 @@ unsigned int server_socket_fd;  //id du socket que tous les threads utilisent
 int port_number = -1;
 
 // Nombre de client enregistré.
-int nb_registered_clients;
+int nb_registered_clients = 0;
 
 // Variable du journal.
 // Nombre de requêtes acceptées immédiatement (ACK envoyé en réponse à REQ).
@@ -50,13 +50,16 @@ unsigned int clients_ended = 0;
 // TODO: Ajouter vos structures de données partagées, ici.
 
 int nb_ressources = -1;
-int *ressources;   //r0, r1, ...
+int *ressources_max;   //r0, r1, ...
 int *available;
 
+pthread_mutex_t client_mutex;
 typedef struct client client;   //chaque client aura sa representation client
 struct client {
     unsigned int id;
-    int* ressources;
+    int* m_ressources;
+    int* u_ressources;
+    unsigned int closed;
 };
 client** clients;
 int max_index_client;
@@ -64,7 +67,7 @@ int max_index_client;
 void create_clients() {
     max_index_client = 2;
 
-    clients = safeMalloc(max_index_client * sizeof(client));
+    clients = safeMalloc((max_index_client+1) * sizeof(client));
 
     for(int i=0; i<max_index_client; i++) {
         clients[i] = NULL;
@@ -75,7 +78,7 @@ void resize_clients(int new_max_index) {
     if(new_max_index < max_index_client) return;
 
     client** old = clients;
-    clients = safeMalloc(new_max_index * sizeof(client));
+    clients = safeMalloc((new_max_index+1) * sizeof(client));
 
     for(int i=0; i<max_index_client; i++) {
         clients[i] = old[i];
@@ -85,18 +88,35 @@ void resize_clients(int new_max_index) {
     free(old);
 }
 
-void new_client(int index, unsigned int id, int* ressources) {
-    if(index > max_index_client) resize_clients(index+1);
+void new_client(unsigned int id, int* ressources) {
+    pthread_mutex_lock(&client_mutex);
 
-    if(clients[index] == NULL) {
+    if(id > max_index_client) resize_clients(id);
+
+    if(clients[id] == NULL) {
         client* cl = safeMalloc(sizeof(client));
-        cl->ressources = ressources;
+        cl->m_ressources = ressources;
+        cl->u_ressources = malloc(nb_ressources * sizeof(int));
+        for(int i=0; i<nb_ressources; i++) {
+            cl->u_ressources[i] = 0;
+        }
         cl->id = id;
+        cl->closed = 0;
 
-        clients[index] = cl;
-    } else if(clients[index]->id != id) {
+        clients[id] = cl;
+
+        fprintf(stdout, "Client %i: nb de m_ressources ", cl->id);
+        print_comm(cl->m_ressources, nb_ressources, false, true);
+    } else if(clients[id]->id != id) {
         exit(204);
     }
+
+    nb_registered_clients++;
+    pthread_mutex_unlock(&client_mutex);
+}
+
+void close_client(int index) {
+    clients[index]->closed = 1;
 }
 
 void st_init() {
@@ -122,12 +142,21 @@ void st_init() {
     int begin[3] = {-1, -1, -1};
     read_socket(new_socket, begin, sizeof(begin), 30000);   //attend 30 secondes: on laisse beaucoup de temps au client
 
+    /*
+     * Pourrait etre fait avec read_compound, mais plus efficace de le faire comme ceci: on doit aussi assigner
+     * nb_ressources et ressources_max, donc il est plus simple de juste acceder aux sous-parties de read_compound
+     */
     int conf1[2] = {-1, -1};
     read_socket(new_socket, conf1, sizeof(conf1), 30000);
     nb_ressources = conf1[1];
 
-    ressources = safeMalloc(nb_ressources * sizeof(int));
-    read_socket(new_socket, ressources, sizeof(ressources), 30000);
+    ressources_max = safeMalloc(nb_ressources * sizeof(int));
+    read_socket(new_socket, ressources_max, nb_ressources* sizeof(int), 15000);
+
+    available = malloc(nb_ressources* sizeof(int));
+    for(int i=0; i<nb_ressources; i++) {
+        available[i] = ressources_max[i];   //au debut tout est avail
+    }
 
     int ok[3] = {ACK, 1, begin[2]};
     write(new_socket, ok, sizeof(ok));
@@ -144,6 +173,62 @@ void st_init() {
      * jamais on change le nb de petits clients
      */
     create_clients();
+
+    if (pthread_mutex_init(&client_mutex, NULL) != 0) {
+        printf("\n mutex init has failed\n");
+        exit(1);
+    }
+}
+
+int bankers(int* request) {
+    int* work = malloc(nb_ressources* sizeof(int));
+    for(int i=0; i<nb_ressources; i++) {
+        if(request[i]>available[i]) {
+            free(work);
+            return false;
+        }
+        work[i] = available[i];
+    }
+
+    int* finish = malloc((max_index_client+1)* sizeof(int));
+    int nb_not_done=0;
+    for(int i=0; i<max_index_client+1; i++) {
+        if(clients[i]->closed == 0) {
+            finish[nb_not_done] = false;
+            nb_not_done++;
+        }
+    }
+    finish[nb_not_done] = NULL;   //null terminate
+
+    for(int i=0; i<nb_not_done; i++) {
+        if(finish[i] == false) {
+            int* needed = clients[i]->m_ressources;
+            int all_lower = 1;
+
+            for(int j=0; j<nb_ressources; j++) {
+                if(needed[j] > work[j]) all_lower = 0;
+            }
+
+            if(all_lower) {
+                for(int k=0; k<nb_ressources; k++) {
+                    work[k] += request[k];
+                    finish[i] = true;
+                }
+            }
+        }
+    }
+
+    int safe = 1;
+    for(int i=0; i<nb_not_done; i++) {
+        if(finish[i] == false) safe = 0;
+    }
+
+    for(int i=0; i<nb_ressources; i++) {
+        available[i] += work[i];
+        if(available[i] < 0) available[i] = 0;
+    }
+
+    return safe;
 }
 
 void st_process_requests(server_thread *st, int socket_fd) {
@@ -153,51 +238,65 @@ void st_process_requests(server_thread *st, int socket_fd) {
      * premier truc recu sera un INI puis les REQ
      */
 
+    int* cmd = read_compound(socket_fd);
 
-    // TODO: Remplacer le contenu de cette fonction
-
-    for (;;) {
-        int head[2] = {-1, -1}; //prends la commande et son nb d'args
-        read_socket(socket_fd, head, sizeof(head), max_wait_time * 100);
-
-        int* cmd_receiver = safeMalloc(head[1] * sizeof(int));
-        int len = read_socket(socket_fd, cmd_receiver, sizeof(cmd_receiver), max_wait_time * 100);
-
-        if (len > 0) {
-            if (len != sizeof(head[0]) && len != sizeof(head)) {
-                printf("Thread %d received invalid command size=%d!\n", st->id, len);
-                break;
-            }
-            printf("Thread %d received command=%d, nb_args=%d\n", st->id, head[0], head[1]);
-            // dispatch of cmd void thunk(int sockfd, struct cmd_header* header);
-
-            //ON TRAITE LES CMD ICI
-            switch(head[0]) {
-                case END:
-
-                case INIT:
-                    //TODO new_client!
-                case REQ:
-
-                case CLO:
-                    break;
-            }
-
-
-        } else {
-            if (len == 0) {
-                fprintf(stderr, "Thread %d, connection timeout\n", st->id);
-            }
+    int response_head[2] = {-1, -1};
+    int* response;
+    int* ressources;
+    switch(cmd[0]) {
+        case END:
+            //TODO
             break;
-        }
+
+        case INIT:
+            ressources = malloc(nb_ressources * sizeof(int));
+
+            for(int i=0; i<nb_ressources; i++) {
+                ressources[i] = cmd[i+3];
+            }
+            new_client(cmd[2], ressources);
+
+            response_head[0] = ACK;
+            response_head[1] = 0;
+            break;
+        case REQ:
+            ressources = malloc(nb_ressources * sizeof(int));
+
+            for(int i=0; i<nb_ressources; i++) {
+                ressources[i] = cmd[i+3];
+            }
+
+            /*
+            if(bankers(ressources) == 1) {
+                response_head[0] = ACK;
+                response_head[1] = 0;
+            } else {
+                response_head[0] = WAIT;
+                response_head[1] = 1;
+
+                response = malloc(sizeof(int));
+                response[0] = 5;
+            }*/
+
+            break;
+         case CLO:
+            break;
     }
+
+    write_compound(socket_fd, response_head, response);
+
+
+
     close(socket_fd);
+
+    // TODO: traiter la commande
+
 }
 
 
 
 void st_signal() {
-    //TODO ecouter le socket pour savoir la quantite de ressources qu'on a
+    //TODO ecouter le socket pour savoir la quantite de ressources_max qu'on a
 
 
 

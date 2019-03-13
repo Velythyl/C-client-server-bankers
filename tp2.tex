@@ -61,21 +61,21 @@ sont \textbf{exclus}.
 
 Pour ce TP, vous devez implémenter en C l’algorithme du banquier, un
 algorithme qui permet de gérer l’allocation des différents types des
-ressources, tout en évitant les interblocages (deadlocks).  Le code fourni
+ressources_max, tout en évitant les interblocages (deadlocks).  Le code fourni
 implémente un modèle de client-serveur qui utilise les prises (sockets)
 comme moyen de communication.
 
 D’un côté l’application serveur est analogue à un système d’exploitation qui
-gère l’allocation des ressources, comme par exemple la mémoire, le disque
+gère l’allocation des ressources_max, comme par exemple la mémoire, le disque
 dur ou les imprimantes.  Ce serveur reçoit simultanément plusieurs demandes
-de ressources des différents clients à travers des connexions.  Pour chaque
-connexion/requête, le serveur doit décider quand les ressources peuvent être
+de ressources_max des différents clients à travers des connexions.  Pour chaque
+connexion/requête, le serveur doit décider quand les ressources_max peuvent être
 allouées au client, de façon à éviter les interblocages en suivant
 l’algorithme du banquier.
 
 De l’autre côte, l’application client simule l’activité de plusieurs clients
 dans différents fils d’exécution (threads).  Ces clients peuvent demander des
-ressources si elles sont disponibles ou libérer des ressource qu’ils
+ressources_max si elles sont disponibles ou libérer des ressource qu’ils
 détiennent à ce moment.
 
 Ce TP vous permettra de mettre en pratique quatre sujets du cours différents:
@@ -142,13 +142,13 @@ Les type de commande sont donner dans le fichiers ``common.h'':
   \begin{center}
     \begin{tabular}{ll}
       \kw{BEGIN(0)} 1 \id{RNG} & Requête pour commencer le serveur \\
-      \kw{CONF(1)} \id{nb\_resources} \id{rsc}$_0$ \id{rsc}$_1$ ... & Provisionne les ressources \\
+      \kw{CONF(1)} \id{nb\_resources} \id{rsc}$_0$ \id{rsc}$_1$ ... & Provisionne les ressources_max \\
       \kw{END(6)} 0 & Termine l'exécution du serveur \\
       \hline
       \kw{INIT(2)} \id{nb\_resources}+1 \id{tid} \id{max}$_0$ \id{max}$_1$ ... &
           Annonce client avec son usage maximum \\
       \kw{REQ(3)} \id{nb\_resources}+1 \id{tid} \id{rsc}$_0$ \id{rsc}$_1$ ... &
-          Requête de ressources \\
+          Requête de ressources_max \\
       \kw{CLO(7)} 1 \id{tid} & Annonce la fin du client \\
     \end{tabular}
   \end{center}
@@ -159,7 +159,7 @@ Les type de commande sont donner dans le fichiers ``common.h'':
   \begin{center}
     \begin{tabular}{ll}
       \kw{ACK(4)} 1 \id{RNG} & Requête de commencement de serveur exécutée avec succès \\
-      \kw{ACK(4)} 0  & Requête de ressources exécutée avec succès \\
+      \kw{ACK(4)} 0  & Requête de ressources_max exécutée avec succès \\
       \kw{ERR(8)} \id{NB\_DE\_CHARS} \id{msg} & Commande invalide, \id{msg} explique pourquoi \\
       \kw{WAIT(5)} 1 \id{sec} & Demande au client d'attendre \id{sec} secondes
     \end{tabular}
@@ -199,13 +199,13 @@ suivante pour le thread client avec le id 332:
   7 1 332 
 \end{verbatim}
 
-À remarquer que pour libérer des ressources, il suffit d'utiliser des
+À remarquer que pour libérer des ressources_max, il suffit d'utiliser des
 quantités négatives dans une \emph{requête}.
 
 À remarquer que si un client est mis en attente par un \kw{WAIT}, il ne fait
 que répéter la même requête après l'attente jusqu'à recevoir un \kw{ACK}.
 
-C'est une erreure s’il reste des ressources occupées lors du \kw{CLO} ou des
+C'est une erreure s’il reste des ressources_max occupées lors du \kw{CLO} ou des
 clients encore connectés lors du \kw{END}.  À la fin, le serveur effectue
 alors l’impression du journal à l’intérieur d’un fichier et le client fait
 de même à la réception de \kw{ACK}.  Le serveur peut alors se fermer ainsi

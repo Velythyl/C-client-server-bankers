@@ -10,8 +10,6 @@ int main(int argc, char *argv[argc + 1]) {
         exit(1);
     }
 
-    fprintf(stdout, "ALLO");
-
     port_number = atoi(argv[1]);
     int num_server_threads = atoi(argv[2]);
     server_thread *st = malloc(num_server_threads * sizeof(server_thread));
@@ -29,8 +27,10 @@ int main(int argc, char *argv[argc + 1]) {
         pthread_create(&(st[i].pt_tid), &(st[i].pt_attr), &st_code, &(st[i]));
     }
 
-    for (unsigned int i = 0; i < num_server_threads; i++)
+    for (unsigned int i = 0; i < num_server_threads; i++) {
         pthread_join(st[i].pt_tid, NULL);
+        pthread_mutex_destroy(&client_mutex);
+    }
 
     // Signale aux clients de se terminer.
     st_signal();

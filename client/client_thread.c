@@ -3,10 +3,6 @@
 
 #include <memory.h>
 #include "client_thread.h"
-#include "common.h"
-
-#include <pthread.h>
-#include <unistd.h>
 
 int port_number = -1;
 int num_request_per_client = -1;
@@ -42,26 +38,30 @@ int random_bounded(int high) {
 
 
 // Vous devez modifier cette fonction pour faire l'envoie des requêtes
-// Les ressources demandées par la requête doivent être choisies aléatoirement
+// Les ressources_max demandées par la requête doivent être choisies aléatoirement
 // (sans dépasser le maximum pour le client). Elles peuvent être positives
 // ou négatives.
-// Assurez-vous que la dernière requête d'un client libère toute les ressources
+// Assurez-vous que la dernière requête d'un client libère toute les ressources_max
 // qu'il a jusqu'alors accumulées.
-void send_request(int client_id, int request_id, int socket_fd) {
+void send_request(int client_id, int request_id, int socket_fd, int* head, int* request) {
 
-    //pas tested...
-    int* request = malloc((num_resources + 3) * sizeof(int));
+    write_compound(socket_fd, head, request);
+    print_comm(head, 2, true, false);
+    print_comm(request, num_resources+1, false, true);
 
-    request[0] = REQ;
-    request[1] = num_resources+1;
-    request[2] = client_id;
+    fprintf(stdout, "Client %d is sending its %d request\n", client_id, request_id);
 
-    for(int i=0; i<num_resources; i++) {
-        request[i+3] = random_bounded(provisioned_resources[i]);
+    int* response = read_compound(socket_fd);
+    switch(response[0]) {
+        case ACK:
+            //TODO?
+        case ERR:
+            break;
+        case WAIT:
+            sleep((unsigned int) response[2]);
+            send_request(client_id, request_id, socket_fd, head, request);
+            break;
     }
-
-    fprintf(stdout, "Client %d is sending its %d request\n", client_id,
-            request_id);
 
     // TP2 TODO:END
 
@@ -69,34 +69,48 @@ void send_request(int client_id, int request_id, int socket_fd) {
 
 
 void *ct_code(void *param) {
-    int socket_fd = -1;
+    int socket = c_open_socket();
     client_thread *ct = (client_thread *) param;
 
-    // TP2 TODO
-    // Vous devez ici faire l'initialisation des petits clients (`INI`).
+    int init[2] = {INIT, num_resources+1};
+    write(socket, init, sizeof(init));
+    print_comm(init, 2, true, false);
 
-    int* init = malloc((num_resources + 3)* sizeof(int));
-    init[0] = INIT;
-    init[1] = num_resources+1;
-    init[2] = ct -> id;
-    for(int i=0; i<num_resources+0; i++) {
-        init[i+3] = random_bounded(provisioned_resources[i]+1);    //on veut de 0 a MAX RESSOURCE
+    int* init_cmd = malloc((num_resources+1)* sizeof(int));
+    init_cmd[0] = ct->id;
+    for (int i = 0; i < num_resources; i++) {
+        init_cmd[i + 1] = random_bounded(provisioned_resources[i] + 1);    //on veut de 0 a MAX RESSOURCE
+        ct->max_ressources[i] = init_cmd[i+1];
     }
 
-    int socket = c_open_socket();
-    write(socket, init, sizeof(init));
-    print_comm(init, 3, true, true);
+    write(socket, init_cmd, (num_resources+1)* sizeof(int));
+    print_comm(init_cmd, num_resources+1, false, true);
 
-    // TP2 TODO:END
+    int* response = read_compound(socket);
+    print_comm(response, response[1] + 2, true, false);
 
-    for (unsigned int request_id = 0; request_id < num_request_per_client;
-         request_id++) {
+    close(socket);
+
+    for (unsigned int request_id = 0; request_id < num_request_per_client; request_id++) {
 
         // TP2 TODO
         // Vous devez ici coder, conjointement avec le corps de send request,
         // le protocole d'envoi de requête.
 
-        send_request(ct->id, request_id, socket_fd);
+        socket = c_open_socket();
+
+        int *request = malloc((num_resources + 1) * sizeof(int));
+        request[0] = ct->id;
+        for (int i = 0; i < num_resources; i++) {
+            //TODO random de neg ou pos
+            request[i + 1] = random_bounded(ct->max_ressources[i]+1);   //de 0 a (max de ressource i +1)-1
+        }
+
+        int head[2] = {REQ, num_resources+1};
+        
+        send_request(ct->id, request_id, socket, head, request);
+
+        close(socket);
 
         // TP2 TODO:END
 
@@ -130,6 +144,7 @@ void ct_wait_server() {
 
 void ct_create_and_start(client_thread *ct) {
     ct->id = count++;   //provient de ct_init()
+    ct->max_ressources = malloc(num_resources* sizeof(int));
 
     pthread_attr_init(&(ct->pt_attr));
     pthread_attr_setdetachstate(&(ct->pt_attr), PTHREAD_CREATE_DETACHED);
@@ -171,9 +186,8 @@ int c_open_socket() {
     serv_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
     serv_addr.sin_port = htons(port_number);
 
-    while(connect(socket_fd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
-        printf("connecting to server...\n");
-    }
+    printf("connecting to server... ");
+    while (connect(socket_fd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0);
 
     return socket_fd;
 }

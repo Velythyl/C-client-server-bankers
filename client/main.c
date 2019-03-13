@@ -10,8 +10,8 @@ void init_server() {
     print_comm(begin, 3, true, true);
 
     int conf1[2] = {1, num_resources};
-    write(init_socket, conf1, sizeof(conf1));   //envoie CONF nb ressources
-    write(init_socket, provisioned_resources, num_resources* sizeof(int));  //envoie le nb de chaque ressources
+    write(init_socket, conf1, sizeof(conf1));   //envoie CONF nb ressources_max
+    write(init_socket, provisioned_resources, num_resources * sizeof(int));  //envoie le nb de chaque ressources_max
     print_comm(conf1, 2, true, false);
     print_comm(provisioned_resources, num_resources, false, true);
 
@@ -21,7 +21,7 @@ void init_server() {
 
     close(init_socket);
 
-    if(ok[0] == 4 && ok[1] == 1 && ok[2] == RNG) return;
+    if (ok[0] == 4 && ok[1] == 1 && ok[2] == RNG) return;
     else {
         fprintf(stdout, "Error on server start, exiting");
         exit(1);
@@ -40,7 +40,7 @@ int main(int argc, char *argv[argc + 1]) {
     num_request_per_client = atoi(argv[3]);
     num_resources = argc - 4;
 
-    //ressources init
+    //ressources_max init
     provisioned_resources = malloc(num_resources * sizeof(int));
     for (unsigned int i = 0; i < num_resources; i++) {
         provisioned_resources[i] = atoi(argv[i + 4]);
