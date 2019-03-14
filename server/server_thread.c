@@ -247,7 +247,39 @@ void st_process_requests(server_thread *st, int socket_fd) {
         case END:
             //TODO
             break;
+        case REQ:
+            response_head[0] = WAIT;
+            response_head[1] = 1;
 
+            response = malloc(sizeof(int));
+            response[0] = 2;
+            /*
+            ressources = malloc(nb_ressources * sizeof(int));
+
+            for(int i=0; i<nb_ressources; i++) {
+                ressources[i] = cmd[i+3];
+            }
+
+            if(bankers(ressources) == 1) {
+                response_head[0] = ACK;
+                response_head[1] = 0;
+            } else {
+                response_head[0] = WAIT;
+                response_head[1] = 1;
+
+                response = malloc(sizeof(int));
+                response[0] = 5;
+            }
+
+            /*
+            response_head[0] = ERR;
+            response_head[1] = 4;
+            response = malloc(4 * sizeof(int));
+            response[0] = 'A';
+            response[1] = 'L';
+            response[2] = 'L';
+            response[3] = 'O';*/
+            break;
         case INIT:
             ressources = malloc(nb_ressources * sizeof(int));
 
@@ -259,33 +291,11 @@ void st_process_requests(server_thread *st, int socket_fd) {
             response_head[0] = ACK;
             response_head[1] = 0;
             break;
-        case REQ:
-            ressources = malloc(nb_ressources * sizeof(int));
-
-            for(int i=0; i<nb_ressources; i++) {
-                ressources[i] = cmd[i+3];
-            }
-
-            /*
-            if(bankers(ressources) == 1) {
-                response_head[0] = ACK;
-                response_head[1] = 0;
-            } else {
-                response_head[0] = WAIT;
-                response_head[1] = 1;
-
-                response = malloc(sizeof(int));
-                response[0] = 5;
-            }*/
-
-            break;
          case CLO:
             break;
     }
 
     write_compound(socket_fd, response_head, response);
-
-
 
     close(socket_fd);
 

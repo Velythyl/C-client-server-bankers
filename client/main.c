@@ -58,6 +58,11 @@ int main(int argc, char *argv[argc + 1]) {
         ct_create_and_start(&(client_threads[i]));
     }
 
+    //TODO TEMP
+    for(int i=0; i<num_clients; i++) {
+        pthread_join(client_threads[i].pt_tid, NULL);
+    }
+
     ct_wait_server();
 
     // Affiche le journal.

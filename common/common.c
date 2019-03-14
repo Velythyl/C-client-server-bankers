@@ -100,8 +100,12 @@ void print_comm(int *arr, int size, bool print_enum, bool print_n) {
                 temp = "CLO";
                 break;
             case 8:
-                temp = "ERR";
-                break;
+                fprintf(stdout, "ERR %d", arr[1]);
+                for (int i = 2; i < size; i++) {
+                    fprintf(stdout, "%i ", arr[i]);
+                }
+                fprintf(stdout, "\n");
+                return;
             case 9:
                 temp = "NB_COMMANDS";
                 break;

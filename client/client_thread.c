@@ -43,28 +43,36 @@ int random_bounded(int high) {
 // ou négatives.
 // Assurez-vous que la dernière requête d'un client libère toute les ressources_max
 // qu'il a jusqu'alors accumulées.
-void send_request(int client_id, int request_id, int socket_fd, int* head, int* request) {
+void send_request(client_thread *ct, int request_id, int* head, int* request) {
+    int socket = c_open_socket();
 
-    write_compound(socket_fd, head, request);
+    write_compound(socket, head, request);
     print_comm(head, 2, true, false);
     print_comm(request, num_resources+1, false, true);
 
-    fprintf(stdout, "Client %d is sending its %d request\n", client_id, request_id);
+    fprintf(stdout, "Client %d is sending its %d request\n", ct->id, request_id);
 
-    int* response = read_compound(socket_fd);
+    int* response = read_compound(socket);
+    print_comm(response, response[1]+2, true, true);
+
     switch(response[0]) {
-        case ACK:
-            //TODO?
-        case ERR:
-            break;
         case WAIT:
+            close(socket);
             sleep((unsigned int) response[2]);
-            send_request(client_id, request_id, socket_fd, head, request);  //TODO! on rouvre pas un socket! donc ca plante! au lieu, retourner le code et rappeler dans st code
+            send_request(ct, request_id, head,request);  //TODO! retourner code de redo a ct code
             break;
+        case ACK:
+            //TODO updater nb ressources prises pour neg?
+            break;
+        case ERR:
+
+            break;
+
     }
 
     // TP2 TODO:END
 
+    close(socket);
 }
 
 
@@ -97,20 +105,25 @@ void *ct_code(void *param) {
         // Vous devez ici coder, conjointement avec le corps de send request,
         // le protocole d'envoi de requête.
 
-        socket = c_open_socket();
+
 
         int *request = malloc((num_resources + 1) * sizeof(int));
         request[0] = ct->id;
         for (int i = 0; i < num_resources; i++) {
-            //TODO random de neg ou pos
             request[i + 1] = random_bounded(ct->max_ressources[i]+1);   //de 0 a (max de ressource i +1)-1
+            /*TODO
+            int pos = random_bounded(2);    //0 ou 1
+            if(pos) {
+                request[i + 1] = random_bounded(ct->max_ressources[i]+1);   //de 0 a (max de ressource i +1)-1
+            }else {
+                request[i + 1] = random_bounded(ct->)
+            }*/
         }
 
         int head[2] = {REQ, num_resources+1};
 
-        send_request(ct->id, request_id, socket, head, request);
+        send_request(ct, request_id, head, request);
 
-        close(socket);
 
         // TP2 TODO:END
 
@@ -136,8 +149,7 @@ void ct_wait_server() {
 
     // TP2 TODO
 
-    sleep(4);
-
+    sleep(300);
     // TP2 TODO:END
 
 }
