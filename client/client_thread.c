@@ -70,6 +70,20 @@ int send_request(int* head, int* request) {
     return response[0];
 }
 
+void ct_end(client_thread* ct) {
+    int socket = c_open_socket();
+
+    int head[2] = {CLO, 1};
+
+    write_compound(socket, head, &ct->id);
+    print_comm(head, 2, true, false);
+    print_comm(&ct->id, 1, false, true);
+
+    close(socket);
+
+    ct->id = NULL;
+}
+
 
 void *ct_code(void *param) {
     int socket = c_open_socket();
@@ -100,14 +114,19 @@ void *ct_code(void *param) {
         int *request = safeMalloc((num_resources + 1) * sizeof(int));
         request[0] = ct->id;
         for (int i = 0; i < num_resources; i++) {
-            request[i + 1] = random_bounded(ct->max_ressources[i]+1);   //de 0 a (max de ressource i +1)-1
-            /*TODO
-            int pos = random_bounded(2);    //0 ou 1
-            if(pos) {
+            if(i == num_resources-1) {
+                //TODO soit faire REQ -max0, ..., -maxN OU sauvegarder le nb de ressources utilisees par chaque client
+                //TODO et liberer tout a la fin
+            } else {
                 request[i + 1] = random_bounded(ct->max_ressources[i]+1);   //de 0 a (max de ressource i +1)-1
-            }else {
-                request[i + 1] = random_bounded(ct->)
-            }*/
+                /*TODO
+                int pos = random_bounded(2);    //0 ou 1
+                if(pos) {
+                    request[i + 1] = random_bounded(ct->max_ressources[i]+1);   //de 0 a (max de ressource i +1)-1
+                }else {
+                    request[i + 1] = random_bounded(ct->)
+                }*/
+            }
         }
 
         int head[2] = {REQ, num_resources+1};
@@ -119,6 +138,7 @@ void *ct_code(void *param) {
             return_code = send_request(head, request);
         } while(return_code == WAIT);
 
+        free(request);
 
         /* Attendre un petit peu (0s-0.1s) pour simuler le calcul.  */
         usleep(random() % (100 * 1000));
@@ -127,6 +147,9 @@ void *ct_code(void *param) {
          * delay.tv_sec = 0;
          * nanosleep (&delay, NULL); */
     }
+
+    //ici, on a fait toutes nos request et on en est a fermer les clients
+    ct_end(ct);
 
     pthread_exit(NULL);
 }
@@ -138,13 +161,34 @@ void *ct_code(void *param) {
 // Le client doit attendre que le serveur termine le traitement de chacune
 // de ses requêtes avant de terminer l'exécution.
 //
-void ct_wait_server() {
+void ct_wait_server(int num_clients, client_thread* client_threads) {
 
-    // TP2 TODO
+    while(true) {
+        sleep(5);
+        int nb_done = 0;
+        for (int i = 0; i < num_clients; i++) {
+            /*
+             * normalement, on devrait avoir un mutex ici pour regarder la valeur de id.
+             *
+             * Cependant, on peut voir cette boucle while(true) comme un grand spinlock: comme les id ne se font changer
+             * que dans leur propres threads, et qu'ici on ne fait que regarder leur valeur, pas besoin de mutex.
+             * En effet, si le id n'est pas NULL lorsqu'on le regarde, ce n'est pas grave: on sleep(5) et on reessaie au
+             * prochain tour de boucle
+             */
+            if (client_threads[i].id == NULL) nb_done++;
+        }
+        if(nb_done == num_clients) break;
+    }
 
-    sleep(300);
-    // TP2 TODO:END
+    int socket = c_open_socket();
+    int end[2] = {END, 0};
 
+    write_socket(socket, end, 2* sizeof(int), TIMEOUT, 0);
+    print_comm(end, 2, true, true);
+
+    int ack[2] = {-1, -1};  //TODO ceci est mauvais, changer pour int* et read_compound si erreur
+    read_socket(socket, ack, 2* sizeof(int), TIMEOUT);
+    print_comm(ack, 2, true, true);
 }
 
 void ct_create_and_start(client_thread *ct) {

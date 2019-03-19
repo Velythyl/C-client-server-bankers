@@ -39,6 +39,8 @@ typedef struct cmd_header_t {
 
 ssize_t read_socket(int sockfd, void *buf, size_t obj_sz, int timeout);
 
+ssize_t write_socket(int sockfd, void *buf, size_t obj_sz, int timeout, int flags);
+
 void *safeMalloc(size_t s);
 
 void print_comm(int *arr, int size, bool print_enum, bool print_n);

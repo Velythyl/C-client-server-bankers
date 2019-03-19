@@ -63,7 +63,7 @@ int main(int argc, char *argv[argc + 1]) {
         pthread_join(client_threads[i].pt_tid, NULL);
     }
 
-    ct_wait_server();
+    ct_wait_server(num_clients, client_threads);
 
     // Affiche le journal.
     ct_print_results(stdout, true);

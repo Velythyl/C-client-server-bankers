@@ -104,10 +104,8 @@ ssize_t write_socket(int sockfd, void *buf, size_t obj_sz, int timeout, int flag
 void write_compound(int socket, int head[2], int* message) {
     int message_size = head[1];
 
-    write_socket(socket, head, 2 * sizeof(int), TIMEOUT, (message_size==0? 0: MSG_MORE));   //envoie CONF nb ressources_max
+    write_socket(socket, head, 2 * sizeof(int), TIMEOUT, (message_size==0? 0: MSG_MORE));
     if(message_size == 0) return;
-
-    //FAIRE UN POLL! un write_socket comme read_socket avec un poll TODO
 
     write_socket(socket, message, message_size * sizeof(int), TIMEOUT, 0);
 }

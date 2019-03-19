@@ -30,7 +30,7 @@ void ct_init(client_thread *);
 
 void ct_create_and_start(client_thread *);
 
-void ct_wait_server();
+void ct_wait_server(int num_clients, client_thread* client_threads);
 
 void ct_print_results(FILE *fd, bool verbose);
 
