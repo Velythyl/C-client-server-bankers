@@ -17,6 +17,8 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
+#define TIMEOUT 60000
+
 enum cmd_type {
     BEGIN,
     CONF,

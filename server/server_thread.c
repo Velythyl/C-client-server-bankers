@@ -140,18 +140,18 @@ void st_init() {
     }
 
     int begin[3] = {-1, -1, -1};
-    read_socket(new_socket, begin, sizeof(begin), 30000);   //attend 30 secondes: on laisse beaucoup de temps au client
+    read_socket(new_socket, begin, sizeof(begin), TIMEOUT);   //attend 30 secondes: on laisse beaucoup de temps au client
 
     /*
      * Pourrait etre fait avec read_compound, mais plus efficace de le faire comme ceci: on doit aussi assigner
      * nb_ressources et ressources_max, donc il est plus simple de juste acceder aux sous-parties de read_compound
      */
     int conf1[2] = {-1, -1};
-    read_socket(new_socket, conf1, sizeof(conf1), 30000);
+    read_socket(new_socket, conf1, sizeof(conf1), TIMEOUT);
     nb_ressources = conf1[1];
 
     ressources_max = safeMalloc(nb_ressources * sizeof(int));
-    read_socket(new_socket, ressources_max, nb_ressources* sizeof(int), 15000);
+    read_socket(new_socket, ressources_max, nb_ressources* sizeof(int), TIMEOUT);
 
     available = malloc(nb_ressources* sizeof(int));
     for(int i=0; i<nb_ressources; i++) {
@@ -239,6 +239,7 @@ void st_process_requests(server_thread *st, int socket_fd) {
      */
 
     int* cmd = read_compound(socket_fd);
+    print_comm(cmd, cmd[1]+2, true, true);
 
     int response_head[2] = {-1, -1};
     int* response;
@@ -248,11 +249,13 @@ void st_process_requests(server_thread *st, int socket_fd) {
             //TODO
             break;
         case REQ:
+            /*
             response_head[0] = WAIT;
             response_head[1] = 1;
 
             response = malloc(sizeof(int));
-            response[0] = 2;
+            response[0] = 2;*/
+
             /*
             ressources = malloc(nb_ressources * sizeof(int));
 
@@ -269,7 +272,7 @@ void st_process_requests(server_thread *st, int socket_fd) {
 
                 response = malloc(sizeof(int));
                 response[0] = 5;
-            }
+            }*/
 
             /*
             response_head[0] = ERR;
@@ -279,6 +282,12 @@ void st_process_requests(server_thread *st, int socket_fd) {
             response[1] = 'L';
             response[2] = 'L';
             response[3] = 'O';*/
+
+            /*
+            response_head[0] = ACK;
+            response_head[1] = 0;*/
+            break;
+
             break;
         case INIT:
             ressources = malloc(nb_ressources * sizeof(int));
@@ -296,6 +305,8 @@ void st_process_requests(server_thread *st, int socket_fd) {
     }
 
     write_compound(socket_fd, response_head, response);
+
+    free(response);
 
     close(socket_fd);
 
@@ -341,6 +352,7 @@ void *st_code(void *param) {
             end_time = time(NULL) + max_wait_time;
         }
 
+        int i=0;
         //prends les prochaines connections des clients qui n'ont pas encore ete traitees
         thread_socket_fd = accept(server_socket_fd, (struct sockaddr *) &thread_addr, &socket_len);
     }

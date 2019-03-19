@@ -16,7 +16,7 @@ void init_server() {
     print_comm(provisioned_resources, num_resources, false, true);
 
     int ok[3] = {-1, -1, -1};
-    read_socket(init_socket, ok, sizeof(ok), 30000);
+    read_socket(init_socket, ok, sizeof(ok), TIMEOUT);
     print_comm(ok, 3, true, true);
 
     close(init_socket);

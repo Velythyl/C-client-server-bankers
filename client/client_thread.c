@@ -43,36 +43,31 @@ int random_bounded(int high) {
 // ou négatives.
 // Assurez-vous que la dernière requête d'un client libère toute les ressources_max
 // qu'il a jusqu'alors accumulées.
-void send_request(client_thread *ct, int request_id, int* head, int* request) {
+int send_request(int* head, int* request) {
     int socket = c_open_socket();
 
     write_compound(socket, head, request);
     print_comm(head, 2, true, false);
     print_comm(request, num_resources+1, false, true);
 
-    fprintf(stdout, "Client %d is sending its %d request\n", ct->id, request_id);
-
     int* response = read_compound(socket);
     print_comm(response, response[1]+2, true, true);
 
     switch(response[0]) {
         case WAIT:
-            close(socket);
             sleep((unsigned int) response[2]);
-            send_request(ct, request_id, head,request);  //TODO! retourner code de redo a ct code
             break;
         case ACK:
             //TODO updater nb ressources prises pour neg?
             break;
         case ERR:
-
             break;
 
     }
 
-    // TP2 TODO:END
-
     close(socket);
+
+    return response[0];
 }
 
 
@@ -101,13 +96,8 @@ void *ct_code(void *param) {
 
     for (unsigned int request_id = 0; request_id < num_request_per_client; request_id++) {
 
-        // TP2 TODO
-        // Vous devez ici coder, conjointement avec le corps de send request,
-        // le protocole d'envoi de requête.
 
-
-
-        int *request = malloc((num_resources + 1) * sizeof(int));
+        int *request = safeMalloc((num_resources + 1) * sizeof(int));
         request[0] = ct->id;
         for (int i = 0; i < num_resources; i++) {
             request[i + 1] = random_bounded(ct->max_ressources[i]+1);   //de 0 a (max de ressource i +1)-1
@@ -122,10 +112,13 @@ void *ct_code(void *param) {
 
         int head[2] = {REQ, num_resources+1};
 
-        send_request(ct, request_id, head, request);
+        fprintf(stdout, "Client %d is preparing its %d request\n", ct->id, request_id);
 
+        int return_code = -1;
+        do {
+            return_code = send_request(head, request);
+        } while(return_code == WAIT);
 
-        // TP2 TODO:END
 
         /* Attendre un petit peu (0s-0.1s) pour simuler le calcul.  */
         usleep(random() % (100 * 1000));
