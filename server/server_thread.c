@@ -251,6 +251,7 @@ void st_process_requests(server_thread *st, int socket_fd) {
     int* ressources;
     switch(cmd[0]) {
         case REQ:
+            //TODO mutex lock ici
             /*
             response_head[0] = WAIT;
             response_head[1] = 1;
@@ -284,10 +285,11 @@ void st_process_requests(server_thread *st, int socket_fd) {
             response[1] = 'L';
             response[2] = 'L';
             response[3] = 'O';*/
-
+            //TODO mutex release ici
 
             response_head[0] = ACK;
             response_head[1] = 0;
+
             break;
         case INIT:
             ressources = malloc(nb_ressources * sizeof(int));
