@@ -185,7 +185,8 @@ void st_init() {
     }
 }
 
-int bankers(int* request) {
+bool bankers(int* request) {
+    //Etape 1 (init)
     int* work = malloc(nb_ressources* sizeof(int));
     for(int i=0; i<nb_ressources; i++) {
         if(request[i]>available[i]) {
@@ -198,22 +199,28 @@ int bankers(int* request) {
     int* finish = malloc((max_index_client+1)* sizeof(int));
     int nb_not_done=0;
     for(int i=0; i<max_index_client+1; i++) {
-        if(clients[i]->id == NULL) {
-            finish[nb_not_done] = false;
-            nb_not_done++;
-        }
+        if(clients[i] == NULL) finish[i] = true;            //clients non-init sont safes
+        else if(clients[i]->id == NULL) finish[i] = true;   //clients fermes sont safes
+        else finish[i] = false;                             //autres sont potentiellements pas safes
     }
-    finish[nb_not_done] = NULL;   //null terminate
 
+    //etape 2
     for(int i=0; i<nb_not_done; i++) {
-        if(finish[i] == false) {
-            int* needed = clients[i]->m_ressources;
-            int all_lower = 1;
-
-            for(int j=0; j<nb_ressources; j++) {
-                if(needed[j] > work[j]) all_lower = 0;
+        if(finish[i] == false) {                                                        //finish[i] == false
+            int* needed = malloc(nb_ressources* sizeof(int));
+            for(int n=0; n<nb_ressources; n++) {
+                needed[n] = clients[i]->m_ressources[n]-clients[i]->u_ressources[n];    //needed est max-used
             }
 
+            int all_lower = true;
+            for(int j=0; j<nb_ressources; j++) {
+                if(needed[j] > work[j]) {                   //si un des needed > work, on a que pas tous sont lower
+                    all_lower = false;
+                    break;
+                }
+            }
+
+            //Si on a trouve un i tel que finish est false et que son needed est plus petit ou egal que work: etape 3
             if(all_lower) {
                 for(int k=0; k<nb_ressources; k++) {
                     work[k] += request[k];
@@ -223,17 +230,32 @@ int bankers(int* request) {
         }
     }
 
-    int safe = 1;
+    int safe = true;
     for(int i=0; i<nb_not_done; i++) {
-        if(finish[i] == false) safe = 0;
+        if(finish[i] == false) {
+            safe = false;
+            break;
+        }
     }
 
-    for(int i=0; i<nb_ressources; i++) {
-        available[i] += work[i];
-        if(available[i] < 0) available[i] = 0;
+    if(safe) {
+        for(int i=0; i<nb_ressources; i++) {
+            available[i] += work[i];
+            if(available[i] < 0) available[i] = 0;
+        }
     }
 
     return safe;
+}
+
+int* error_builder(const char* message, int size) {
+    int* err = malloc(size* sizeof(int));
+
+    for(int i=0; i<size; i++) {
+        err[i] = message[i];
+    }
+
+    return err;
 }
 
 void st_process_requests(server_thread *st, int socket_fd) {
@@ -287,9 +309,9 @@ void st_process_requests(server_thread *st, int socket_fd) {
             response[3] = 'O';*/
             //TODO mutex release ici
 
+            /*
             response_head[0] = ACK;
-            response_head[1] = 0;
-
+            response_head[1] = 0;*/
             break;
         case INIT:
             ressources = malloc(nb_ressources * sizeof(int));
@@ -339,6 +361,13 @@ void st_process_requests(server_thread *st, int socket_fd) {
             close_client(cmd[2]);
             close(socket_fd);
             return;
+        case BEGIN:
+        case CONF:
+            response_head[0] = ERR;
+            response_head[1] = 26;
+
+            response = error_builder("BEGIN/CONF not valid here", 26);
+            break;
     }
 
     write_compound(socket_fd, response_head, response);
