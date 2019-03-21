@@ -185,6 +185,30 @@ void st_init() {
     }
 }
 
+//https://www.geeksforgeeks.org/program-bankers-algorithm-set-1-safety-algorithm/
+int bankers2(int* request, int index) {
+    client* cl = clients[index];
+    if(cl == NULL) return ERR;
+    for(int i=0; i<nb_ressources; i++) {
+        if((request[i]<0) && ((cl->u_ressources[i] + request[i])<0)) return ERR;
+    }
+
+    int* avail = malloc(nb_ressources* sizeof(int));
+    for(int i=0; i<nb_ressources; i++) {
+        if(request[i] > (cl->m_ressources[i] - cl->u_ressources[i])) {
+            free(avail);
+            return ERR;
+        }
+        if(request[i] > available[i]) {
+            free(avail);
+            return WAIT;
+        }
+
+        avail[i] = available[i] - request[i];
+    }
+
+}
+
 //https://www.geeksforgeeks.org/program-bankers-algorithm-set-1-safety-algorithm/ TODO
 int bankers(int* request, int index) {  //TODO marche fuckall
     //test si on libere plus qu'on a
