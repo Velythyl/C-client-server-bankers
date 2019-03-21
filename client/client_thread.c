@@ -118,14 +118,14 @@ void *ct_code(void *param) {
         request[0] = ct->id;
         for (int i = 0; i < num_resources; i++) {
 
-            if(i == num_resources-1) {                          //si derniere REQ
+            if(request_id == num_request_per_client-1) {                          //si derniere REQ
                 request[i + 1 ] = -(ct->used_ressources[i]);    //libere tout ce qu'on avait
 
             } else {
                 int pos = (random_bounded(2));  //de 0 a 2-1
 
                 if(pos) request[i + 1] = random_bounded(ct->max_ressources[i]+1);   //de 0 a (max de ressource i +1)-1
-                else request[i + 1] = random_bounded(ct->used_ressources[i]+1);     //de 0 a (used i +1)-1
+                else request[i + 1] = -random_bounded(ct->used_ressources[i]+1);     //de 0 a (used i +1)-1
             }
         }
 

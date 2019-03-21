@@ -183,9 +183,16 @@ void st_init() {
         printf("\n mutex init has failed\n");
         exit(1);
     }
+    if (pthread_mutex_init(&bankers_mutex, NULL) != 0) {
+        printf("\n mutex init has failed\n");
+        exit(1);
+    }
 }
 
 //https://www.geeksforgeeks.org/program-bankers-algorithm-set-1-safety-algorithm/
+pthread_mutex_t bankers_mutex;
+enum {CL_NULL=-2, NEG_REQ=-1};
+//traiter les free avant les REQ comme ca plus de parallelisme
 int bankers2(int* request, int index) {
     client* cl = clients[index];
     if(cl == NULL) return ERR;
@@ -193,108 +200,91 @@ int bankers2(int* request, int index) {
         if((request[i]<0) && ((cl->u_ressources[i] + request[i])<0)) return ERR;
     }
 
+    pthread_mutex_lock(&bankers_mutex); //lock car on depend de available
+
+    //etape 1: init
     int* avail = malloc(nb_ressources* sizeof(int));
+    int* work = malloc(nb_ressources*sizeof(int));
     for(int i=0; i<nb_ressources; i++) {
+        /*
         if(request[i] > (cl->m_ressources[i] - cl->u_ressources[i])) {
-            free(avail);
+            free(avail), free(work), pthread_mutex_unlock(&bankers_mutex);
             return ERR;
-        }
+        }*/
         if(request[i] > available[i]) {
-            free(avail);
+            free(avail), free(work), pthread_mutex_unlock(&bankers_mutex);
             return WAIT;
         }
+
 
         avail[i] = available[i] - request[i];
+        work[i] = avail[i];
     }
 
-}
-
-//https://www.geeksforgeeks.org/program-bankers-algorithm-set-1-safety-algorithm/ TODO
-int bankers(int* request, int index) {  //TODO marche fuckall
-    //test si on libere plus qu'on a
-    client* cl = clients[index];
-    if(cl == NULL) return ERR;
-    for(int i=0; i<nb_ressources; i++) {
-        if((request[i]<0) && ((cl->u_ressources[i] + request[i])<0)) return ERR;
-    }
-
-    //Etape 1 (init)
-    int* work = malloc(nb_ressources* sizeof(int));
-    for(int i=0; i<nb_ressources; i++) {
-        if( request[i] > ressources_max[i] ) {
-            free(work);
-            return ERR;
-
-        } else if( (request[i]+cl->u_ressources[i])>available[i] ) {
-            free(work);
-            return WAIT;
-        }
-        work[i] = available[i] - request[i];
-    }
-
-    int* finish = malloc((max_index_client+1)* sizeof(int));
-    int nb_not_done=0;
+    int* finish = malloc((max_index_client+1)*sizeof(int));
     for(int i=0; i<max_index_client+1; i++) {
         if(clients[i] == NULL) finish[i] = true;            //clients non-init sont safes
         else if(clients[i]->id == NULL) finish[i] = true;   //clients fermes sont safes
-        else {
-            finish[i] = false;                             //autres sont potentiellements pas safes
-            nb_not_done++;
-        }
+        else finish[i] = false;                             //autres sont potentiellements pas safes
     }
-    int count = 0;
+
 
     //etape 2
-    while(count < nb_not_done) {
-        for(int i=0; i<max_index_client+1; i++) {
-            if(finish[i] == false) {                                                        //finish[i] == false
-                int* needed = malloc(nb_ressources* sizeof(int));
-                for(int n=0; n<nb_ressources; n++) {
-                    needed[n] = clients[i]->m_ressources[n] - (clients[i]->u_ressources[n] + (i==index? request[i] : 0));    //needed est max-used
-                }
+    while(true) {
+        int found_i = -1;
 
-                int all_lower = true;
+        for(int i=0; i<max_index_client+1; i++) {
+            if(finish[i] == false) {
+                bool one_needed_gt_work = false;
                 for(int j=0; j<nb_ressources; j++) {
-                    if(needed[j] > work[j]) {                   //si un des needed > work, on a que pas tous sont lower
-                        all_lower = false;
+                    int needed_j = clients[i]->m_ressources[j] - (clients[i]->u_ressources[j] + (i==index? request[i] : 0));
+                    if(needed_j > work[j]) {
+                        one_needed_gt_work = true;
                         break;
                     }
                 }
 
-                //Si on a trouve un i tel que finish est false et que son needed est plus petit ou egal que work: etape 3
-                if(all_lower) {
-                    for(int k=0; k<nb_ressources; k++) {
-                        work[k] += request[k];
-                        finish[i] = true;
-                    }
-                } else {
-                    count++;
+                if(one_needed_gt_work == false) {
+                    found_i = i;
+                    break;
                 }
-            } else {
-                count++;
             }
         }
-    }
 
+        if(found_i == -1) break;
 
-    int safe = true;
-    for(int i=0; i<nb_not_done; i++) {
+        //etape 3
+        else {
+            for(int j=0; j<nb_ressources; j++) {
+                work[j] += clients[found_i]->u_ressources[j] + (found_i==index? request[j] : 0);
+            }
+            finish[found_i] = true;
+        }
+    };
+
+    //etape 4
+    bool safe = true;
+    for(int i=0; i<max_index_client+1; i++) {
         if(finish[i] == false) {
             safe = false;
             break;
         }
     }
 
-    if(safe) {
-        for(int i=0; i<nb_ressources; i++) {
-            available[i] += work[i];
-            if(available[i] < 0) available[i] = 0;
-        }
+    free(work), free(avail), free(finish);
 
-        return ACK;
+    if(safe == false) {
+        pthread_mutex_unlock(&bankers_mutex);
+        return WAIT;
+    }
+    else {
+        for(int i=0; i<nb_ressources; i++) {
+            available[i] += request[i];
+        }
     }
 
-    return WAIT;
+    pthread_mutex_unlock(&bankers_mutex);
+    return ACK;
 }
 
 int* error_builder(const char* message, int size) {
@@ -331,11 +321,11 @@ void st_process_requests(server_thread *st, int socket_fd) {
                 ressources[i] = cmd[i+3];
             }
 
-            switch (bankers(ressources, cmd[2])) {
+            switch (bankers2(ressources, cmd[2])) {
                 case ERR:
                     response_head[0] = ERR;
-                    response_head[1] = 28;
-                    response = error_builder("Invalid -REQ or +REQ too big", 28);
+                    response_head[1] = 13;
+                    response = error_builder("Banking error", 13);
                     break;
                 case ACK:
                     response_head[0] = ACK;

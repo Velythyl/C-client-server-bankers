@@ -16,6 +16,8 @@ extern int port_number;
 
 extern pthread_mutex_t client_mutex;
 
+extern pthread_mutex_t bankers_mutex;
+
 void st_open_socket();
 
 void st_init();
