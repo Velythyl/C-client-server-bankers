@@ -23,6 +23,7 @@ struct client_thread {
     pthread_attr_t pt_attr;
 
     int* max_ressources;
+    int* used_ressources;
 };
 
 

@@ -43,7 +43,7 @@ int random_bounded(int high) {
 // ou négatives.
 // Assurez-vous que la dernière requête d'un client libère toute les ressources_max
 // qu'il a jusqu'alors accumulées.
-int send_request(int* head, int* request) {
+void send_request(client_thread* ct, int* head, int* request) {
     int socket = c_open_socket();
 
     write_compound(socket, head, request);
@@ -55,19 +55,20 @@ int send_request(int* head, int* request) {
 
     switch(response[0]) {
         case WAIT:
+            close(socket);
             sleep((unsigned int) response[2]);
-            break;
+            send_request(ct, head, request);
+            return;
         case ACK:
-            //TODO updater nb ressources prises pour neg?
+            for(int i=0; i<num_resources; i++) {
+                ct->used_ressources[i] += request[i+1];
+            }
             break;
         case ERR:
             break;
-
     }
 
     close(socket);
-
-    return response[0];
 }
 
 void ct_end(client_thread* ct) {
@@ -97,7 +98,9 @@ void *ct_code(void *param) {
     init_cmd[0] = ct->id;
     for (int i = 0; i < num_resources; i++) {
         init_cmd[i + 1] = random_bounded(provisioned_resources[i] + 1);    //on veut de 0 a MAX RESSOURCE
-        ct->max_ressources[i] = init_cmd[i+1];
+
+        ct->max_ressources[i] = init_cmd[i+1];  //max est le random de provisionned
+        ct->used_ressources[i] = 0;             //used est tout a 0
     }
 
     write(socket, init_cmd, (num_resources+1)* sizeof(int));
@@ -114,18 +117,15 @@ void *ct_code(void *param) {
         int *request = safeMalloc((num_resources + 1) * sizeof(int));
         request[0] = ct->id;
         for (int i = 0; i < num_resources; i++) {
-            if(i == num_resources-1) {
-                //TODO soit faire REQ -max0, ..., -maxN OU sauvegarder le nb de ressources utilisees par chaque client
-                //TODO et liberer tout a la fin
+
+            if(i == num_resources-1) {                          //si derniere REQ
+                request[i + 1 ] = -(ct->used_ressources[i]);    //libere tout ce qu'on avait
+
             } else {
-                request[i + 1] = random_bounded(ct->max_ressources[i]+1);   //de 0 a (max de ressource i +1)-1
-                /*TODO
-                int pos = random_bounded(2);    //0 ou 1
-                if(pos) {
-                    request[i + 1] = random_bounded(ct->max_ressources[i]+1);   //de 0 a (max de ressource i +1)-1
-                }else {
-                    request[i + 1] = random_bounded(ct->)
-                }*/
+                int pos = (random_bounded(2));  //de 0 a 2-1
+
+                if(pos) request[i + 1] = random_bounded(ct->max_ressources[i]+1);   //de 0 a (max de ressource i +1)-1
+                else request[i + 1] = random_bounded(ct->used_ressources[i]+1);     //de 0 a (used i +1)-1
             }
         }
 
@@ -133,10 +133,7 @@ void *ct_code(void *param) {
 
         fprintf(stdout, "Client %d is preparing its %d request\n", ct->id, request_id);
 
-        int return_code = -1;
-        do {
-            return_code = send_request(head, request);
-        } while(return_code == WAIT);
+        send_request(ct, head, request);
 
         free(request);
 
@@ -194,6 +191,7 @@ void ct_wait_server(int num_clients, client_thread* client_threads) {
 void ct_create_and_start(client_thread *ct) {
     ct->id = count++;   //provient de ct_init()
     ct->max_ressources = malloc(num_resources* sizeof(int));
+    ct->used_ressources = malloc(num_resources*sizeof(int));
 
     pthread_attr_init(&(ct->pt_attr));
     pthread_attr_setdetachstate(&(ct->pt_attr), PTHREAD_CREATE_DETACHED);

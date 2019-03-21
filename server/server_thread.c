@@ -185,15 +185,27 @@ void st_init() {
     }
 }
 
-bool bankers(int* request) {
+//https://www.geeksforgeeks.org/program-bankers-algorithm-set-1-safety-algorithm/ TODO
+int bankers(int* request, int index) {  //TODO marche fuckall
+    //test si on libere plus qu'on a
+    client* cl = clients[index];
+    if(cl == NULL) return ERR;
+    for(int i=0; i<nb_ressources; i++) {
+        if((request[i]<0) && ((cl->u_ressources[i] + request[i])<0)) return ERR;
+    }
+
     //Etape 1 (init)
     int* work = malloc(nb_ressources* sizeof(int));
     for(int i=0; i<nb_ressources; i++) {
-        if(request[i]>available[i]) {
+        if( request[i] > ressources_max[i] ) {
             free(work);
-            return false;
+            return ERR;
+
+        } else if( (request[i]+cl->u_ressources[i])>available[i] ) {
+            free(work);
+            return WAIT;
         }
-        work[i] = available[i];
+        work[i] = available[i] - request[i];
     }
 
     int* finish = malloc((max_index_client+1)* sizeof(int));
@@ -201,34 +213,45 @@ bool bankers(int* request) {
     for(int i=0; i<max_index_client+1; i++) {
         if(clients[i] == NULL) finish[i] = true;            //clients non-init sont safes
         else if(clients[i]->id == NULL) finish[i] = true;   //clients fermes sont safes
-        else finish[i] = false;                             //autres sont potentiellements pas safes
+        else {
+            finish[i] = false;                             //autres sont potentiellements pas safes
+            nb_not_done++;
+        }
     }
+    int count = 0;
 
     //etape 2
-    for(int i=0; i<nb_not_done; i++) {
-        if(finish[i] == false) {                                                        //finish[i] == false
-            int* needed = malloc(nb_ressources* sizeof(int));
-            for(int n=0; n<nb_ressources; n++) {
-                needed[n] = clients[i]->m_ressources[n]-clients[i]->u_ressources[n];    //needed est max-used
-            }
-
-            int all_lower = true;
-            for(int j=0; j<nb_ressources; j++) {
-                if(needed[j] > work[j]) {                   //si un des needed > work, on a que pas tous sont lower
-                    all_lower = false;
-                    break;
+    while(count < nb_not_done) {
+        for(int i=0; i<max_index_client+1; i++) {
+            if(finish[i] == false) {                                                        //finish[i] == false
+                int* needed = malloc(nb_ressources* sizeof(int));
+                for(int n=0; n<nb_ressources; n++) {
+                    needed[n] = clients[i]->m_ressources[n] - (clients[i]->u_ressources[n] + (i==index? request[i] : 0));    //needed est max-used
                 }
-            }
 
-            //Si on a trouve un i tel que finish est false et que son needed est plus petit ou egal que work: etape 3
-            if(all_lower) {
-                for(int k=0; k<nb_ressources; k++) {
-                    work[k] += request[k];
-                    finish[i] = true;
+                int all_lower = true;
+                for(int j=0; j<nb_ressources; j++) {
+                    if(needed[j] > work[j]) {                   //si un des needed > work, on a que pas tous sont lower
+                        all_lower = false;
+                        break;
+                    }
                 }
+
+                //Si on a trouve un i tel que finish est false et que son needed est plus petit ou egal que work: etape 3
+                if(all_lower) {
+                    for(int k=0; k<nb_ressources; k++) {
+                        work[k] += request[k];
+                        finish[i] = true;
+                    }
+                } else {
+                    count++;
+                }
+            } else {
+                count++;
             }
         }
     }
+
 
     int safe = true;
     for(int i=0; i<nb_not_done; i++) {
@@ -243,9 +266,11 @@ bool bankers(int* request) {
             available[i] += work[i];
             if(available[i] < 0) available[i] = 0;
         }
+
+        return ACK;
     }
 
-    return safe;
+    return WAIT;
 }
 
 int* error_builder(const char* message, int size) {
@@ -269,35 +294,39 @@ void st_process_requests(server_thread *st, int socket_fd) {
     print_comm(cmd, cmd[1]+2, true, true);
 
     int response_head[2] = {-1, -1};
-    int* response;
+    int* response = NULL;
     int* ressources;
     switch(cmd[0]) {
         case REQ:
             //TODO mutex lock ici
-            /*
-            response_head[0] = WAIT;
-            response_head[1] = 1;
 
-            response = malloc(sizeof(int));
-            response[0] = 2;*/
-
-            /*
             ressources = malloc(nb_ressources * sizeof(int));
 
             for(int i=0; i<nb_ressources; i++) {
+                if(cmd[i+3])
                 ressources[i] = cmd[i+3];
             }
 
-            if(bankers(ressources) == 1) {
-                response_head[0] = ACK;
-                response_head[1] = 0;
-            } else {
-                response_head[0] = WAIT;
-                response_head[1] = 1;
+            switch (bankers(ressources, cmd[2])) {
+                case ERR:
+                    response_head[0] = ERR;
+                    response_head[1] = 28;
+                    response = error_builder("Invalid -REQ or +REQ too big", 28);
+                    break;
+                case ACK:
+                    response_head[0] = ACK;
+                    response_head[1] = 0;
+                    break;
+                case WAIT:
+                    response_head[0] = WAIT;
+                    response_head[1] = 1;
 
-                response = malloc(sizeof(int));
-                response[0] = 5;
-            }*/
+                    response = malloc(sizeof(int));
+                    response[0] = 1;
+                    break;
+            }
+
+            free(ressources);
 
             /*
             response_head[0] = ERR;
@@ -312,6 +341,13 @@ void st_process_requests(server_thread *st, int socket_fd) {
             /*
             response_head[0] = ACK;
             response_head[1] = 0;*/
+
+            /*
+            response_head[0] = WAIT;
+            response_head[1] = 1;
+
+            response = malloc(sizeof(int));
+            response[0] = 2;*/
             break;
         case INIT:
             ressources = malloc(nb_ressources * sizeof(int));
@@ -372,7 +408,7 @@ void st_process_requests(server_thread *st, int socket_fd) {
 
     write_compound(socket_fd, response_head, response);
 
-    free(response);
+    if(response != NULL) free(response);
     //pas de free(ressources) car on place son pointeur dans new_client
 
     close(socket_fd);
