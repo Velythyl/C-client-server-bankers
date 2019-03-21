@@ -185,7 +185,6 @@ void st_init() {
     }
 }
 
-//https://www.geeksforgeeks.org/program-bankers-algorithm-set-1-safety-algorithm/
 int bankers2(int* request, int index) {
     client* cl = clients[index];
     if(cl == NULL) return ERR;
