@@ -194,6 +194,7 @@ void st_init() {
 }
 
 //https://www.geeksforgeeks.org/program-bankers-algorithm-set-1-safety-algorithm/
+//https://www.thecrazyprogrammer.com/2016/07/bankers-algorithm-in-c.html TODO
 pthread_mutex_t bankers_mutex;
 enum {CL_NULL=-2, NEG_REQ=-1};
 //traiter les free avant les REQ comme ca plus de parallelisme
@@ -201,6 +202,7 @@ int bankers2(int* request, int index) {
     client* cl = clients[index];
     if(cl == NULL) return ERR;
     for(int i=0; i<nb_ressources; i++) {
+        if(request[i] > (cl->m_ressources[i] - cl->u_ressources[i])) return ERR;
         if((request[i]<0) && ((cl->u_ressources[i] + request[i])<0)) return ERR;
     }
 
@@ -338,7 +340,6 @@ void st_process_requests(server_thread *st, int socket_fd) {
     bool ok;
     switch(cmd[0]) {
         case REQ:
-            //TODO mutex lock ici
 
             ressources = malloc(nb_ressources * sizeof(int));
 
@@ -358,14 +359,15 @@ void st_process_requests(server_thread *st, int socket_fd) {
                     response_head[1] = 0;
                     break;
                 case WAIT:
+                    /*
                     clients[cmd[2]]->nb_of_wait++;
-                    if(clients[cmd[2]]->nb_of_wait >=4) {
+                    if(clients[cmd[2]]->nb_of_wait >=4) {   //TODO enlever ca quand bankers marche
                         clients[cmd[2]]->nb_of_wait = 0;
                         response_head[0] = ERR;
                         response_head[1] = 21;
                         response = error_builder("Waited too many times", 21);
                         break;
-                    }
+                    }*/
 
                     response_head[0] = WAIT;
                     response_head[1] = 1;
@@ -385,7 +387,6 @@ void st_process_requests(server_thread *st, int socket_fd) {
             response[1] = 'L';
             response[2] = 'L';
             response[3] = 'O';*/
-            //TODO mutex release ici
 
             /*
             response_head[0] = ACK;
