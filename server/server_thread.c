@@ -59,6 +59,7 @@ struct client {
     unsigned int id;
     int* m_ressources;
     int* u_ressources;
+    unsigned int nb_of_wait;
 };
 client** clients;
 int max_index_client;
@@ -95,16 +96,19 @@ void resize_clients(int new_max_index) {
 void new_client(unsigned int id, int* ressources) {
     pthread_mutex_lock(&client_mutex);
 
-    resize_clients(id);
+    resize_clients(id); //s'assure que ID fitte dans clients[ID]
 
     if(clients[id] == NULL) {
         client* cl = safeMalloc(sizeof(client));
         cl->m_ressources = ressources;
+
         cl->u_ressources = malloc(nb_ressources * sizeof(int));
         for(int i=0; i<nb_ressources; i++) {
             cl->u_ressources[i] = 0;
         }
+
         cl->id = id;
+        cl->nb_of_wait = 0;
 
         clients[id] = cl;
 
@@ -201,6 +205,22 @@ int bankers2(int* request, int index) {
     }
 
     pthread_mutex_lock(&bankers_mutex); //lock car on depend de available
+    pthread_mutex_lock(&client_mutex);
+
+    fprintf(stdout, "Analyzing REQ ");
+    print_comm(request, nb_ressources, false, false);
+
+    fprintf(stdout, "\t//Res M: ");
+    print_comm(ressources_max, nb_ressources, false, false);
+
+    fprintf(stdout, "\t//Res A: ");
+    print_comm(available, nb_ressources, false, false);
+
+    fprintf(stdout, "\t//Client %d M: ", index);
+    print_comm(cl->m_ressources, nb_ressources, false, false);
+
+    fprintf(stdout, "\t//Client %d U: ", index);
+    print_comm(cl->u_ressources, nb_ressources, false, false);
 
     //etape 1: init
     int* avail = malloc(nb_ressources* sizeof(int));
@@ -212,10 +232,10 @@ int bankers2(int* request, int index) {
             return ERR;
         }*/
         if(request[i] > available[i]) {
-            free(avail), free(work), pthread_mutex_unlock(&bankers_mutex);
+            free(avail), free(work), pthread_mutex_unlock(&bankers_mutex), pthread_mutex_unlock(&client_mutex);
+            fprintf(stdout, "\t//WAIT\n");
             return WAIT;
         }
-
 
         avail[i] = available[i] - request[i];
         work[i] = avail[i];
@@ -237,6 +257,8 @@ int bankers2(int* request, int index) {
             if(finish[i] == false) {
                 bool one_needed_gt_work = false;
                 for(int j=0; j<nb_ressources; j++) {
+                    if(request[i] <= 0) continue;
+
                     int needed_j = clients[i]->m_ressources[j] - (clients[i]->u_ressources[j] + (i==index? request[i] : 0));
                     if(needed_j > work[j]) {
                         one_needed_gt_work = true;
@@ -274,16 +296,19 @@ int bankers2(int* request, int index) {
     free(work), free(avail), free(finish);
 
     if(safe == false) {
-        pthread_mutex_unlock(&bankers_mutex);
+        pthread_mutex_unlock(&bankers_mutex), pthread_mutex_unlock(&client_mutex);
+        fprintf(stdout, "\t//WAIT\n");
         return WAIT;
     }
     else {
         for(int i=0; i<nb_ressources; i++) {
-            available[i] += request[i];
+            available[i] -= request[i];
+            cl->u_ressources[i] += request[i];
         }
     }
 
-    pthread_mutex_unlock(&bankers_mutex);
+    fprintf(stdout, "\t//ACK\n");
+    pthread_mutex_unlock(&bankers_mutex), pthread_mutex_unlock(&client_mutex);
     return ACK;
 }
 
@@ -310,6 +335,7 @@ void st_process_requests(server_thread *st, int socket_fd) {
     int response_head[2] = {-1, -1};
     int* response = NULL;
     int* ressources;
+    bool ok;
     switch(cmd[0]) {
         case REQ:
             //TODO mutex lock ici
@@ -317,7 +343,7 @@ void st_process_requests(server_thread *st, int socket_fd) {
             ressources = malloc(nb_ressources * sizeof(int));
 
             for(int i=0; i<nb_ressources; i++) {
-                if(cmd[i+3])
+                int r = cmd[i+3];
                 ressources[i] = cmd[i+3];
             }
 
@@ -332,11 +358,20 @@ void st_process_requests(server_thread *st, int socket_fd) {
                     response_head[1] = 0;
                     break;
                 case WAIT:
+                    clients[cmd[2]]->nb_of_wait++;
+                    if(clients[cmd[2]]->nb_of_wait >=4) {
+                        clients[cmd[2]]->nb_of_wait = 0;
+                        response_head[0] = ERR;
+                        response_head[1] = 21;
+                        response = error_builder("Waited too many times", 21);
+                        break;
+                    }
+
                     response_head[0] = WAIT;
                     response_head[1] = 1;
 
                     response = malloc(sizeof(int));
-                    response[0] = 1;
+                    response[0] = 500000;   //u secondes
                     break;
             }
 
@@ -408,9 +443,26 @@ void st_process_requests(server_thread *st, int socket_fd) {
             accepting_connections = false;  //en mettant ceci a false, les threads vont sortir de la loop dans st_code
             break;
         case CLO:
-            close_client(cmd[2]);
-            close(socket_fd);
-            return;
+            ok = true;
+            for(int i=0; i<nb_ressources; i++) {
+                if(clients[cmd[2]]->u_ressources[i] != 0) {
+                    ok = false;
+                    break;
+                }
+            }
+
+            if(!ok) {
+                response_head[0] = ERR;
+                response_head[1] = 9;
+                response = error_builder("CLO error", 9);
+            } else {
+                close_client(cmd[2]);
+
+                response_head[0] = ACK;
+                response_head[1] = 0;
+            }
+
+            break;
         case BEGIN:
         case CONF:
             response_head[0] = ERR;

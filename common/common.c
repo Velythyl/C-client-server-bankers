@@ -140,11 +140,11 @@ void print_comm(int *arr, int size, bool print_enum, bool print_n) {
                 temp = "CLO";
                 break;
             case 8:
-                fprintf(stdout, "ERR %d ", arr[1]);
+                fprintf(stderr, "ERR %d ", arr[1]);
                 for (int i = 2; i < size; i++) {
-                    fprintf(stdout, "%c", arr[i]);
+                    fprintf(stderr, "%c", arr[i]);
                 }
-                fprintf(stdout, "\n");
+                fprintf(stderr, "\n");
                 return;
             case 9:
                 temp = "NB_COMMANDS";

@@ -56,13 +56,14 @@ void send_request(client_thread* ct, int* head, int* request) {
     switch(response[0]) {
         case WAIT:
             close(socket);
-            sleep((unsigned int) response[2]);
+            usleep((unsigned int) response[2]);
             send_request(ct, head, request);
             return;
         case ACK:
             for(int i=0; i<num_resources; i++) {
                 ct->used_ressources[i] += request[i+1];
             }
+            count_accepted++;
             break;
         case ERR:
             break;
@@ -80,7 +81,14 @@ void ct_end(client_thread* ct) {
     print_comm(head, 2, true, false);
     print_comm(&ct->id, 1, false, true);
 
+    int* response = read_compound(socket);
+    print_comm(response, response[1]+2, true, true);
+
     close(socket);
+
+    if(response[0] == ERR) {
+        exit(204);
+    }
 
     ct->id = NULL;
 }
