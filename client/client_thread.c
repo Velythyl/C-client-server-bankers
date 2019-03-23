@@ -2,14 +2,13 @@
 #define _XOPEN_SOURCE 500
 
 #include <memory.h>
+#include <stdatomic.h>
 #include "client_thread.h"
 
 int port_number = -1;
 int num_request_per_client = -1;
 int num_resources = -1;
 int *provisioned_resources = NULL;
-
-unsigned int client_socket_fd;
 
 // Variable d'initialisation des threads clients.
 unsigned int count = 0; //id des threads
@@ -23,17 +22,22 @@ unsigned int count_accepted = 0;
 unsigned int count_on_wait = 0;
 
 // Nombre de requête refusée (REFUSE reçus en réponse à REQ)
-unsigned int count_invalid = 0;
+unsigned int count_invalid = 0; //NOTE: on assume que c'est les ERR recus a REQ
 
 // Nombre de client qui se sont terminés correctement (ACC reçu en réponse à END)
-unsigned int count_dispatched = 0;
+unsigned int count_dispatched = 0;  //NOTE: on assume que c'est en reponse a CLO*
 
 // Nombre total de requêtes envoyées.
-unsigned int request_sent = 0;
+unsigned int request_sent = 0;  //NOTE: on assume que c'est le nombre de REQ, pas le nombre de REQ uniques
 
 // retourne un nb de 0 a high-1
 int random_bounded(int high) {
-    return (int) (random() % high); //safe puisque high est un int, donc on est surs que random % high fitte dans un int
+    if(high == 0) return 0;
+
+    long r = random();
+    if(r<0) r= -r;
+
+    return (int) (r % high); //safe puisque high est un int, donc on est surs que random % high fitte dans un int
 }
 
 
@@ -43,7 +47,10 @@ int random_bounded(int high) {
 // ou négatives.
 // Assurez-vous que la dernière requête d'un client libère toute les ressources_max
 // qu'il a jusqu'alors accumulées.
-void send_request(client_thread* ct, int* head, int* request) {
+int send_request(client_thread* ct, int* head, int* request) {
+    //TODO lock pour les count, ou encore utiliser un adder atomique?
+    __atomic_add_fetch(&request_sent, 1, __ATOMIC_SEQ_CST);
+
     int socket = c_open_socket();
 
     write_compound(socket, head, request);
@@ -53,23 +60,28 @@ void send_request(client_thread* ct, int* head, int* request) {
     int* response = read_compound(socket);
     print_comm(response, response[1]+2, true, true);
 
-    switch(response[0]) {
+    close(socket);
+
+    int code = response[0];
+
+    switch(code) {
         case WAIT:
-            close(socket);
-            usleep((unsigned int) response[2]);
-            send_request(ct, head, request);
-            return;
-        case ACK:
-            for(int i=0; i<num_resources; i++) {
-                ct->used_ressources[i] += request[i+1];
-            }
-            count_accepted++;
+            __atomic_add_fetch(&count_on_wait, 1, __ATOMIC_SEQ_CST);
+            sleep((unsigned int) response[2]);
             break;
+
+        case ACK:
+            for(int i=0; i<num_resources; i++) ct->used_ressources[i] += request[i+1];
+            __atomic_add_fetch(&count_accepted, 1, __ATOMIC_SEQ_CST);
+            break;
+
         case ERR:
+            __atomic_add_fetch(&count_invalid, 1, __ATOMIC_SEQ_CST);
             break;
     }
 
-    close(socket);
+    free(response);
+    return code;
 }
 
 void ct_end(client_thread* ct) {
@@ -88,8 +100,11 @@ void ct_end(client_thread* ct) {
 
     if(response[0] == ERR) {
         exit(204);
+    } else if(response[0] == ACK) {
+        __atomic_add_fetch(&count_dispatched, 1, __ATOMIC_SEQ_CST);
     }
 
+    free(response);
     ct->id = NULL;
 }
 
@@ -116,6 +131,7 @@ void *ct_code(void *param) {
 
     int* response = read_compound(socket);
     print_comm(response, response[1] + 2, true, false);
+    free(response);
 
     close(socket);
 
@@ -130,9 +146,7 @@ void *ct_code(void *param) {
                 request[i + 1 ] = -(ct->used_ressources[i]);    //libere tout ce qu'on avait
 
             } else {
-                int pos = (random_bounded(2));  //de 0 a 2-1
-
-                if(pos) request[i + 1] = random_bounded(ct->max_ressources[i]+1);   //de 0 a (max de ressource i +1)-1
+                if(random_bounded(2)) request[i + 1] = random_bounded(ct->max_ressources[i]+1);   //de 0 a (max de ressource i +1)-1
                 else request[i + 1] = -random_bounded(ct->used_ressources[i]+1);     //de 0 a (used i +1)-1
             }
         }
@@ -141,7 +155,7 @@ void *ct_code(void *param) {
 
         fprintf(stdout, "Client %d is preparing its %d request\n", ct->id, request_id);
 
-        send_request(ct, head, request);
+        while(send_request(ct, head, request) == WAIT);
 
         free(request);
 
@@ -191,9 +205,9 @@ void ct_wait_server(int num_clients, client_thread* client_threads) {
     write_socket(socket, end, 2* sizeof(int), TIMEOUT, 0);
     print_comm(end, 2, true, true);
 
-    int ack[2] = {-1, -1};  //TODO ceci est mauvais, changer pour int* et read_compound si erreur
-    read_socket(socket, ack, 2* sizeof(int), TIMEOUT);
-    print_comm(ack, 2, true, true);
+    int* response = read_compound(socket);
+    print_comm(response, response[1]+2, true, true);
+    free(response);
 }
 
 void ct_create_and_start(client_thread *ct) {
