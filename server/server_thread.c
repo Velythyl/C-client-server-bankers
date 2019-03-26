@@ -98,7 +98,7 @@ void new_client(unsigned int id, int* ressources) {
         client* cl = safeMalloc(sizeof(client));
         cl->m_ressources = ressources;
 
-        cl->u_ressources = malloc(nb_ressources * sizeof(int));
+        cl->u_ressources = safeMalloc(nb_ressources * sizeof(int));
         for(int i=0; i<nb_ressources; i++) cl->u_ressources[i] = 0;
 
         cl->id = id;
@@ -186,48 +186,17 @@ void st_init() {
 pthread_mutex_t bankers_mutex;
 enum {ERR_NEEDED=-2, ERR_NEGA=-1};
 //traiter les free avant les REQ comme ca plus de parallelisme
-int bankers2(int* request, int index) {
+int bankers2(const int* request, int index, int* work, int* finish) {
     client* cl = clients[index];
-    if(cl == NULL) return ERR;                                                      //si essaie d'allouer a un client pas init
-    for(int i=0; i<nb_ressources; i++) {
-        if(request[i] > (cl->m_ressources[i] - cl->u_ressources[i])) return ERR_NEEDED;    //Si Requestedi[ j ] ≤ Needed[ i,j ] for any j erreur!
-        if((request[i]<0) && ((cl->u_ressources[i] + request[i])<0)) return ERR_NEGA;    //si free plus  qu'on a
-    }
-
-    pthread_mutex_lock(&bankers_mutex); //lock car on depend de available
-
-    fprintf(stdout, "Analyzing REQ ");
-    print_comm(request, nb_ressources, false, false);
-
-    fprintf(stdout, "\t//Res A: ");
-    print_comm(available, nb_ressources, false, false);
-
-    fprintf(stdout, "\t//Client %d M: ", index);
-    print_comm(cl->m_ressources, nb_ressources, false, false);
-
-    fprintf(stdout, "\t//Client %d U: ", index);
-    print_comm(cl->u_ressources, nb_ressources, false, false);
 
     //etape 1: init
-    int* work = malloc(nb_ressources*sizeof(int));
     for(int i=0; i<nb_ressources; i++) {
-        /*
-        if(request[i] > (cl->m_ressources[i] - cl->u_ressources[i])) {
-            free(avail), free(work), pthread_mutex_unlock(&bankers_mutex);
-            return ERR;
-        }*/
-        if(request[i] > available[i]) {                                             //Si Requestedi[ j ] > Available[ j ] for any j doit attendre
-            free(work), pthread_mutex_unlock(&bankers_mutex);
-            fprintf(stdout, "\t//WAIT\n");
-            return WAIT;
-        }
-
+        if(request[i] > available[i]) return WAIT;          //Si Requestedi[ j ] > Available[ j ] for any j doit attendre
 
         work[i] = available[i] - request[i];                //Work = Available et Available[j] -= Requestedi[j] (for all j)
     }
 
     //Finish[ i ] = false for i = 0, 1, …, n - 1
-    int* finish = malloc((max_index_client+1)*sizeof(int));
     for(int i=0; i<max_index_client+1; i++) {
         if(clients[i] == NULL) finish[i] = true;            //clients non-init sont safes
         else if(clients[i]->id == NULL) finish[i] = true;   //clients fermes sont safes
@@ -280,27 +249,56 @@ int bankers2(int* request, int index) {
         }
     }
 
-    free(work), free(finish);
-
-    if(safe == false) {
-        pthread_mutex_unlock(&bankers_mutex);
-        fprintf(stdout, "\t//WAIT\n");
-        return WAIT;
-
-    } else {
+    if(safe == false) return WAIT;
+    else {
         for(int i=0; i<nb_ressources; i++) {
             available[i] -= request[i];
             cl->u_ressources[i] += request[i];
         }
     }
 
-    fprintf(stdout, "\t//ACK\n");
-    pthread_mutex_unlock(&bankers_mutex);
     return ACK;
 }
 
+int call_bankers(int* request, int index) {
+    client* cl = clients[index];
+    if(cl == NULL) return ERR;                                                      //si essaie d'allouer a un client pas init
+    for(int i=0; i<nb_ressources; i++) {
+        if(request[i] > (cl->m_ressources[i] - cl->u_ressources[i])) return ERR_NEEDED;    //Si Requestedi[ j ] ≤ Needed[ i,j ] for any j erreur!
+        if((request[i]<0) && ((cl->u_ressources[i] + request[i])<0)) return ERR_NEGA;    //si free plus  qu'on a
+    }
+
+    pthread_mutex_lock(&bankers_mutex); //lock car on depend de available
+    pthread_mutex_lock(&client_mutex);
+
+    fprintf(stdout, "Analyzing REQ ");
+    print_comm(request, nb_ressources, false, false);
+
+    fprintf(stdout, "\t//Res A: ");
+    print_comm(available, nb_ressources, false, false);
+
+    fprintf(stdout, "\t//Client %d M: ", index);
+    print_comm(cl->m_ressources, nb_ressources, false, false);
+
+    fprintf(stdout, "\t//Client %d U: ", index);
+    print_comm(cl->u_ressources, nb_ressources, false, false);
+
+    int* work = safeMalloc(nb_ressources*sizeof(int));
+    int* finish = safeMalloc((max_index_client+1)*sizeof(int));
+
+    int code = bankers2(request, index, work, finish);
+    free(work), free(finish);
+    fprintf(stdout, "\t//");
+    print_comm(&code, 1, true, true);
+
+    pthread_mutex_unlock(&bankers_mutex);
+    pthread_mutex_unlock(&client_mutex);
+
+    return code;
+}
+
 int* error_builder(const char* message, int size) {
-    int* err = malloc(size* sizeof(int));
+    int* err = safeMalloc(size* sizeof(int));
 
     for(int i=0; i<size; i++) {
         err[i] = message[i];
@@ -327,11 +325,11 @@ void st_process_requests(server_thread *st, int socket_fd) {
         case REQ:
             __atomic_add_fetch(&request_processed, 1, __ATOMIC_SEQ_CST);
 
-            ressources = malloc(nb_ressources * sizeof(int));
+            ressources = safeMalloc(nb_ressources * sizeof(int));
 
             for(int i=0; i<nb_ressources; i++) ressources[i] = cmd[i+3];
 
-            switch (bankers2(ressources, cmd[2])) {
+            switch (call_bankers(ressources, cmd[2])) {
                 case ERR_NEEDED:
                     response_head[0] = ERR;
                     response_head[1] = 28;
@@ -360,12 +358,12 @@ void st_process_requests(server_thread *st, int socket_fd) {
                         response = error_builder("Waited too many times", 21);
                         __atomic_add_fetch(&count_invalid, 1, __ATOMIC_SEQ_CST);
                         break;
-                    }
+                    } else __atomic_add_fetch(&count_wait, 1, __ATOMIC_SEQ_CST);
 
                     response_head[0] = WAIT;
                     response_head[1] = 1;
 
-                    response = malloc(sizeof(int));
+                    response = safeMalloc(sizeof(int));
                     response[0] = 1;
                     break;
             }
@@ -375,7 +373,7 @@ void st_process_requests(server_thread *st, int socket_fd) {
             /*
             response_head[0] = ERR;
             response_head[1] = 4;
-            response = malloc(4 * sizeof(int));
+            response = safeMalloc(4 * sizeof(int));
             response[0] = 'A';
             response[1] = 'L';
             response[2] = 'L';
@@ -389,11 +387,11 @@ void st_process_requests(server_thread *st, int socket_fd) {
             response_head[0] = WAIT;
             response_head[1] = 1;
 
-            response = malloc(sizeof(int));
+            response = safeMalloc(sizeof(int));
             response[0] = 2;*/
             break;
         case INIT:
-            ressources = malloc(nb_ressources * sizeof(int));
+            ressources = safeMalloc(nb_ressources * sizeof(int));
 
             for(int i=0; i<nb_ressources; i++) {
                 ressources[i] = cmd[i+3];

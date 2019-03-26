@@ -39,7 +39,7 @@ ssize_t read_socket(int sockfd, void *buf, size_t obj_sz, int timeout) {
 void *safeMalloc(size_t s) {
     void *temp = malloc(s);
     if (temp == NULL) {
-        fprintf(stdout, "MALLOC ERROR");
+        fprintf(stderr, "CRITICAL MALLOC ERROR");
         exit(1);
     }
     return temp;

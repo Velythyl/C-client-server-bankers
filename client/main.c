@@ -41,7 +41,7 @@ int main(int argc, char *argv[argc + 1]) {
     num_resources = argc - 4;
 
     //ressources_max init
-    provisioned_resources = malloc(num_resources * sizeof(int));
+    provisioned_resources = safeMalloc(num_resources * sizeof(int));
     for (unsigned int i = 0; i < num_resources; i++) {
         provisioned_resources[i] = atoi(argv[i + 4]);
         fprintf(stdout, "Provisioned ressource %i: ", i);
@@ -53,7 +53,7 @@ int main(int argc, char *argv[argc + 1]) {
     init_server();
 
     // thread init
-    client_thread *client_threads = malloc(num_clients * sizeof(client_thread));
+    client_thread *client_threads = safeMalloc(num_clients * sizeof(client_thread));
     for (unsigned int i = 0; i < num_clients; i++) {
         ct_create_and_start(&(client_threads[i]));
     }

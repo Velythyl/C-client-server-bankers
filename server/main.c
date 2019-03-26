@@ -12,7 +12,7 @@ int main(int argc, char *argv[argc + 1]) {
 
     port_number = atoi(argv[1]);
     int num_server_threads = atoi(argv[2]);
-    server_thread *st = malloc(num_server_threads * sizeof(server_thread));
+    server_thread *st = safeMalloc(num_server_threads * sizeof(server_thread));
 
     // Initialise le serveur.
     st_init();

@@ -33,6 +33,8 @@ arpa/inet.h
 /home/charlie/CLionProjects/OSTP2/client/client_thread.c
 memory.h
 -
+stdatomic.h
+-
 client_thread.h
 /home/charlie/CLionProjects/OSTP2/client/client_thread.h
 

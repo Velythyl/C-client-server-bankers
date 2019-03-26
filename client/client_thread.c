@@ -117,7 +117,7 @@ void *ct_code(void *param) {
     write(socket, init, sizeof(init));
     print_comm(init, 2, true, false);
 
-    int* init_cmd = malloc((num_resources+1)* sizeof(int));
+    int* init_cmd = safeMalloc((num_resources+1)* sizeof(int));
     init_cmd[0] = ct->id;
     for (int i = 0; i < num_resources; i++) {
         init_cmd[i + 1] = random_bounded(provisioned_resources[i] + 1);    //on veut de 0 a MAX RESSOURCE
@@ -146,8 +146,10 @@ void *ct_code(void *param) {
                 request[i + 1 ] = -(ct->used_ressources[i]);    //libere tout ce qu'on avait
 
             } else {
-                if(random_bounded(2)) request[i + 1] = random_bounded(ct->max_ressources[i]+1);   //de 0 a (max de ressource i +1)-1
-                else request[i + 1] = -random_bounded(ct->used_ressources[i]+1);     //de 0 a (used i +1)-1
+                //de 0 a (max de ressource i +1)-1
+                if(random_bounded(2)) request[i + 1] = random_bounded(ct->max_ressources[i]+1);
+                //de 0 a (used i +1)-1
+                else request[i + 1] = -random_bounded(ct->used_ressources[i]+1);
             }
         }
 
@@ -161,10 +163,6 @@ void *ct_code(void *param) {
 
         /* Attendre un petit peu (0s-0.1s) pour simuler le calcul.  */
         usleep(random() % (100 * 1000));
-        /* struct timespec delay;
-         * delay.tv_nsec = random () % (100 * 1000000);
-         * delay.tv_sec = 0;
-         * nanosleep (&delay, NULL); */
     }
 
     //ici, on a fait toutes nos request et on en est a fermer les clients
@@ -212,8 +210,8 @@ void ct_wait_server(int num_clients, client_thread* client_threads) {
 
 void ct_create_and_start(client_thread *ct) {
     ct->id = count++;   //provient de ct_init()
-    ct->max_ressources = malloc(num_resources* sizeof(int));
-    ct->used_ressources = malloc(num_resources*sizeof(int));
+    ct->max_ressources = safeMalloc(num_resources* sizeof(int));
+    ct->used_ressources = safeMalloc(num_resources*sizeof(int));
 
     pthread_attr_init(&(ct->pt_attr));
     pthread_attr_setdetachstate(&(ct->pt_attr), PTHREAD_CREATE_DETACHED);
