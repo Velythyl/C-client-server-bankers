@@ -181,19 +181,17 @@ void st_init() {
     }
 }
 
-//https://www.geeksforgeeks.org/program-bankers-algorithm-set-1-safety-algorithm/
-//https://www.thecrazyprogrammer.com/2016/07/bankers-algorithm-in-c.html TODO
-pthread_mutex_t bankers_mutex;
-enum {ERR_NEEDED=-2, ERR_NEGA=-1};
-//traiter les free avant les REQ comme ca plus de parallelisme
-int bankers2(const int* request, int index, int* work, int* finish) {
-    client* cl = clients[index];
-
+/*
+ * Fait l'algo du banquier sur une situation hypothetique. Available et les u_ressources des clients refletent cette
+ * situation, et work et finish sont des tableaux de la bonne grandeur deja malloc.
+ *
+ * Puisqu'on appelle toujours bankers de call_bankers, on peut y gerer les free de work et finish: on s'evite de devoir
+ * les free avant chaque cas qui return
+ */
+int bankers(int *work, int *finish) {
     //etape 1: init
     for(int i=0; i<nb_ressources; i++) {
-        if(request[i] > available[i]) return WAIT;          //Si Requestedi[ j ] > Available[ j ] for any j doit attendre
-
-        work[i] = available[i] - request[i];                //Work = Available et Available[j] -= Requestedi[j] (for all j)
+        work[i] = available[i];                //Work = Available et Available[j] -= Requestedi[j] (for all j)
     }
 
     //Finish[ i ] = false for i = 0, 1, …, n - 1
@@ -213,9 +211,7 @@ int bankers2(const int* request, int index, int* work, int* finish) {
 
                 bool one_needed_gt_work = false;        //assume aucun needed[i] > work[i]
                 for(int j=0; j<nb_ressources; j++) {
-                    if(request[i] <= 0) continue;       //requetes negatives sont toujours OK
-
-                    int needed_j = clients[i]->m_ressources[j] - (clients[i]->u_ressources[j] + (i==index? request[i] : 0));
+                    int needed_j = clients[i]->m_ressources[j] - clients[i]->u_ressources[j];
                     if(needed_j > work[j]) {            //si ce qu'on a encore besoin apres avoir hypothetiquement accepte la REQ > work
                         one_needed_gt_work = true;
                         break;
@@ -230,11 +226,10 @@ int bankers2(const int* request, int index, int* work, int* finish) {
         }
 
         if(found_i == -1) break;    //si on a pas trouve de i: on passe a l'etape 4
-
         //etape 3
         else {
             for(int j=0; j<nb_ressources; j++) {
-                work[j] += clients[found_i]->u_ressources[j] + (found_i==index? request[j] : 0);    //Work[ j ] += Allocated[ i, j] (for all j)
+                work[j] += clients[found_i]->u_ressources[j];    //Work[ j ] += Allocated[ i, j] (for all j)
             }
             finish[found_i] = true;
         }
@@ -250,16 +245,14 @@ int bankers2(const int* request, int index, int* work, int* finish) {
     }
 
     if(safe == false) return WAIT;
-    else {
-        for(int i=0; i<nb_ressources; i++) {
-            available[i] -= request[i];
-            cl->u_ressources[i] += request[i];
-        }
-    }
-
-    return ACK;
+    else return ACK;
 }
 
+/*
+ * Permet d'initialiser les structures pour le banquier et de les free elegamment.
+ *
+ * De plus, separe la logique de requete/index de celle de work/finish
+ */
 int call_bankers(int* request, int index) {
     client* cl = clients[index];
     if(cl == NULL) return ERR;                                                      //si essaie d'allouer a un client pas init
@@ -268,8 +261,10 @@ int call_bankers(int* request, int index) {
         if((request[i]<0) && ((cl->u_ressources[i] + request[i])<0)) return ERR_NEGA;    //si free plus  qu'on a
     }
 
-    pthread_mutex_lock(&bankers_mutex); //lock car on depend de available
-    pthread_mutex_lock(&client_mutex);
+    for(int i=0; i<nb_ressources; i++) {
+        cl->u_ressources[i] += request[i];
+        available[i] -= request[i];
+    }
 
     fprintf(stdout, "Analyzing REQ ");
     print_comm(request, nb_ressources, false, false);
@@ -286,8 +281,28 @@ int call_bankers(int* request, int index) {
     int* work = safeMalloc(nb_ressources*sizeof(int));
     int* finish = safeMalloc((max_index_client+1)*sizeof(int));
 
-    int code = bankers2(request, index, work, finish);
+    int code = bankers(work, finish);
     free(work), free(finish);
+
+    if(code != ACK) {
+        for(int i=0; i<nb_ressources; i++) {
+            cl->u_ressources[i] -= request[i];
+            available[i] += request[i];
+        }
+    }
+
+    return code;
+}
+
+/*
+ * Permet de verouiller les strucutures pour bankers, et ensuite d'imprimer le code de retour de l'algo
+ */
+pthread_mutex_t bankers_mutex;  // le mutex de l'algo du banquier
+int lock_bankers(int *request, int index) {
+    pthread_mutex_lock(&bankers_mutex); //lock car on depend de available
+    pthread_mutex_lock(&client_mutex);
+
+    int code = call_bankers(request, index);
     fprintf(stdout, "\t//");
     print_comm(&code, 1, true, true);
 
@@ -329,19 +344,22 @@ void st_process_requests(server_thread *st, int socket_fd) {
 
             for(int i=0; i<nb_ressources; i++) ressources[i] = cmd[i+3];
 
-            switch (call_bankers(ressources, cmd[2])) {
+
+            switch (lock_bankers(ressources, cmd[2])) {
                 case ERR_NEEDED:
                     response_head[0] = ERR;
                     response_head[1] = 28;
                     response = error_builder("REQ+USED greater than NEEDED", 28);
-                    __atomic_add_fetch(&count_invalid, 1, __ATOMIC_SEQ_CST);
                     break;
                 case ERR_NEGA:
                     response_head[0] = ERR;
                     response_head[1] = 26;
                     response = error_builder("REQ freeing more than USED", 26);
-                    __atomic_add_fetch(&count_invalid, 1, __ATOMIC_SEQ_CST);
                     break;
+                case ERR:
+                    response_head[0] = ERR;
+                    response_head[1] = 7;
+                    response = error_builder("CLI NUL", 7);
                 case ACK:
                     response_head[0] = ACK;
                     response_head[1] = 0;
@@ -349,46 +367,19 @@ void st_process_requests(server_thread *st, int socket_fd) {
                     __atomic_add_fetch(&count_accepted, 1, __ATOMIC_SEQ_CST);
                     break;
                 case WAIT:
-
-                    clients[cmd[2]]->nb_of_wait++;
-                    if(clients[cmd[2]]->nb_of_wait >=4) {   //TODO enlever ca quand bankers marche
-                        clients[cmd[2]]->nb_of_wait = 0;
-                        response_head[0] = ERR;
-                        response_head[1] = 21;
-                        response = error_builder("Waited too many times", 21);
-                        __atomic_add_fetch(&count_invalid, 1, __ATOMIC_SEQ_CST);
-                        break;
-                    } else __atomic_add_fetch(&count_wait, 1, __ATOMIC_SEQ_CST);
-
                     response_head[0] = WAIT;
                     response_head[1] = 1;
 
                     response = safeMalloc(sizeof(int));
                     response[0] = 1;
+
+                    __atomic_add_fetch(&count_wait, 1, __ATOMIC_SEQ_CST);
                     break;
             }
 
+            if(response_head[0] == ERR) __atomic_add_fetch(&count_invalid, 1, __ATOMIC_SEQ_CST);
+
             free(ressources);
-
-            /*
-            response_head[0] = ERR;
-            response_head[1] = 4;
-            response = safeMalloc(4 * sizeof(int));
-            response[0] = 'A';
-            response[1] = 'L';
-            response[2] = 'L';
-            response[3] = 'O';*/
-
-            /*
-            response_head[0] = ACK;
-            response_head[1] = 0;*/
-
-            /*
-            response_head[0] = WAIT;
-            response_head[1] = 1;
-
-            response = safeMalloc(sizeof(int));
-            response[0] = 2;*/
             break;
         case INIT:
             ressources = safeMalloc(nb_ressources * sizeof(int));

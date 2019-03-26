@@ -18,13 +18,18 @@
 #include <arpa/inet.h>
 
 #define TIMEOUT 60000
-
+/*
+ * On respecte toujours l'API de cmt_type; ERR_NEEDED et ERR_NEGA sont juste pour l'affichage en ligne de commande de
+ * server_thread.c
+ */
 enum cmd_type {
+    ERR_NEEDED = -2,
+    ERR_NEGA = -1,
     BEGIN,
     CONF,
     INIT,
     REQ,
-    ACK,// Mars Attack
+    ACK,
     WAIT,
     END,
     CLO,

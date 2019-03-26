@@ -114,39 +114,47 @@ void print_comm(int *arr, int size, bool print_enum, bool print_n) {
     if (print_enum) {
         char *temp;
 
-        switch (arr[0]) {
-            case 0:
+        switch (arr[0]) {\
+            case ERR_NEGA:
+                fprintf(stdout, "ERR_NEGA");
+                if(print_n) fprintf(stdout, "\n");
+                return;
+            case ERR_NEEDED:
+                fprintf(stdout, "ERR_NEEDED");
+                if(print_n) fprintf(stdout, "\n");
+                return;
+            case BEGIN:
                 temp = "BEGIN";
                 break;
-            case 1:
+            case CONF:
                 temp = "CONF";
                 break;
-            case 2:
+            case INIT:
                 temp = "INIT";
                 break;
-            case 3:
+            case REQ:
                 temp = "REQ";
                 break;
-            case 4:
+            case ACK:
                 temp = "ACK";
                 break;
-            case 5:
+            case WAIT:
                 temp = "WAIT";
                 break;
-            case 6:
+            case END:
                 temp = "END";
                 break;
-            case 7:
+            case CLO:
                 temp = "CLO";
                 break;
-            case 8:
+            case ERR:
                 fprintf(stderr, "ERR %d ", arr[1]);
                 for (int i = 2; i < size; i++) {
                     fprintf(stderr, "%c", arr[i]);
                 }
-                fprintf(stderr, "\n");
+                if(print_n) fprintf(stderr, "\n");
                 return;
-            case 9:
+            case NB_COMMANDS:
                 temp = "NB_COMMANDS";
                 break;
             default:
