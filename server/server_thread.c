@@ -257,7 +257,8 @@ int call_bankers(int* request, int index) {
     client* cl = clients[index];
     if(cl == NULL) return ERR;                                                      //si essaie d'allouer a un client pas init
     for(int i=0; i<nb_ressources; i++) {
-        if(request[i] > (cl->m_ressources[i] - cl->u_ressources[i])) return ERR_NEEDED;    //Si Requestedi[ j ] ≤ Needed[ i,j ] for any j erreur!
+        //if(request[i] > (cl->m_ressources[i] - cl->u_ressources[i])) return ERR_NEEDED;    //Si Requestedi[ j ] ≤
+        // Needed[ i,j ] for any j erreur!
         if((request[i]<0) && ((cl->u_ressources[i] + request[i])<0)) return ERR_NEGA;    //si free plus  qu'on a
     }
 
