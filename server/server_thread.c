@@ -116,10 +116,14 @@ void new_client(unsigned int id, int* ressources) {
     pthread_mutex_unlock(&client_mutex);
 }
 
+/*
+ * Ferme le client, mais le laisse alloc: on veut juste qu'
+ */
 void close_client(int index) {
-    clients[index]->id = NULL;  //on ferme le client en lui donnant NULL
     free(clients[index]->u_ressources);
     free(clients[index]->m_ressources);
+    free(clients[index]);
+    clients[index] = NULL;
 }
 
 void st_init() {
@@ -196,11 +200,9 @@ int bankers(int *work, int *finish) {
 
     //Finish[ i ] = false for i = 0, 1, …, n - 1
     for(int i=0; i<max_index_client+1; i++) {
-        if(clients[i] == NULL) finish[i] = true;            //clients non-init sont safes
-        else if(clients[i]->id == NULL) finish[i] = true;   //clients fermes sont safes
+        if(clients[i] == NULL) finish[i] = true;            //clients non-init ou fermes sont safes
         else finish[i] = false;                             //autres sont potentiellements pas safes
     }
-
 
     //etape 2
     while(true) {
@@ -405,11 +407,7 @@ void st_process_requests(server_thread *st, int socket_fd) {
                      * En effet, si le id n'est pas NULL lorsqu'on le regarde, ce n'est pas grave: on sleep(5) et on reessaie au
                      * prochain tour de boucle
                      */
-                    if (clients[i]->id == NULL) nb_done++;
-                    if(clients[i] == NULL) {
-                        //TODO envoyer une erreur
-                        exit(201);
-                    }
+                    if (clients[i] == NULL) nb_done++;
                 }
                 if(nb_done == max_index_client) break;
                 sleep(2);
@@ -467,15 +465,6 @@ void st_process_requests(server_thread *st, int socket_fd) {
     //pas de free(ressources) car on place son pointeur dans new_client
 
     close(socket_fd);
-}
-
-
-
-void st_signal() {
-    //TODO ecouter le socket pour savoir la quantite de ressources_max qu'on a
-
-
-
 }
 
 void* st_code(void *param) {

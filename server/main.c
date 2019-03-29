@@ -33,8 +33,7 @@ int main(int argc, char *argv[argc + 1]) {
         pthread_mutex_destroy(&bankers_mutex);
     }
 
-    // Signale aux clients de se terminer.
-    st_signal();
+    free(st);
 
     // Affiche le journal.
     st_print_results(stdout, true);
