@@ -451,6 +451,9 @@ void st_process_requests(int socket_fd) {
 
             response = error_builder("BEGIN/CONF not valid here", 26);
             break;
+        default:
+            fprintf(stderr, "WRONG COMMAND");
+            exit(21);
     }
 
     write_compound(socket_fd, response_head, response);

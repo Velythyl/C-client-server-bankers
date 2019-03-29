@@ -78,6 +78,9 @@ int send_request(client_thread* ct, int* head, int* request) {
         case ERR:
             __atomic_add_fetch(&count_invalid, 1, __ATOMIC_SEQ_CST);
             break;
+        default:
+            fprintf(stderr, "WRONG COMMAND");
+            exit(21);
     }
 
     free(response);
