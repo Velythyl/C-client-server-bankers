@@ -11,12 +11,8 @@
 #include <string.h>
 
 enum {
-    NUL = '\0'
-};
-
-enum {
     /* Configuration constants.  */
-            max_wait_time = 30,
+    max_wait_time =30,
     server_backlog_size = 5
 };
 
@@ -32,7 +28,7 @@ int nb_registered_clients = 0;
 unsigned int count_accepted = 0;
 
 // Nombre de requêtes acceptées après un délai (ACK après REQ, mais retardé).
-unsigned int count_wait = 0;    //TODO ????????????
+unsigned int count_wait = 0;
 
 // Nombre de requête erronées (ERR envoyé en réponse à REQ).
 unsigned int count_invalid = 0;
@@ -47,18 +43,14 @@ unsigned int request_processed = 0;
 // Nombre de clients ayant envoyé le message CLO.
 unsigned int clients_ended = 0;
 
-// TODO: Ajouter vos structures de données partagées, ici.
-
 int nb_ressources = -1;
 int *available;
 
 pthread_mutex_t client_mutex;
 typedef struct client client;   //chaque client aura sa representation client
 struct client {
-    unsigned int id;
     int* m_ressources;
     int* u_ressources;
-    unsigned int nb_of_wait;
 };
 client** clients;
 int max_index_client;
@@ -101,16 +93,12 @@ void new_client(unsigned int id, int* ressources) {
         cl->u_ressources = safeMalloc(nb_ressources * sizeof(int));
         for(int i=0; i<nb_ressources; i++) cl->u_ressources[i] = 0;
 
-        cl->id = id;
-        cl->nb_of_wait = 0;
-
         clients[id] = cl;
 
-        fprintf(stdout, "Client %i: nb de m_ressources ", cl->id);
+        fprintf(stdout, "Client %i: nb de m_ressources ", id);
         print_comm(cl->m_ressources, nb_ressources, false, true);
-    } else if(clients[id]->id != id) {
-        exit(204);
-    }
+
+    } else exit(204);
 
     __atomic_add_fetch(&nb_registered_clients, 1, __ATOMIC_SEQ_CST);
     pthread_mutex_unlock(&client_mutex);
@@ -140,24 +128,22 @@ void st_init() {
     while (new_socket < 0) {
         new_socket = accept(server_socket_fd, (struct sockaddr *) &addr, &socket_len);
 
-        if (time(NULL) >= end_time) {
-            break;
-        }
+        if (time(NULL) >= end_time) break;
     }
 
     int begin[3] = {-1, -1, -1};
-    read_socket(new_socket, begin, sizeof(begin), TIMEOUT);   //attend 30 secondes: on laisse beaucoup de temps au client
+    read_socket(new_socket, begin, sizeof(begin));   //attend 30 secondes: on laisse beaucoup de temps au client
 
     /*
      * Pourrait etre fait avec read_compound, mais plus efficace de le faire comme ceci: on doit aussi assigner
      * nb_ressources et ressources_max, donc il est plus simple de juste acceder aux sous-parties de read_compound
      */
     int conf1[2] = {-1, -1};
-    read_socket(new_socket, conf1, sizeof(conf1), TIMEOUT);
+    read_socket(new_socket, conf1, sizeof(conf1));
     nb_ressources = conf1[1];
 
     available = safeMalloc(nb_ressources * sizeof(int));
-    read_socket(new_socket, available, nb_ressources* sizeof(int), TIMEOUT);
+    read_socket(new_socket, available, nb_ressources* sizeof(int));
 
     int ok[3] = {ACK, 1, begin[2]};
     write(new_socket, ok, sizeof(ok));
@@ -318,14 +304,12 @@ int lock_bankers(int *request, int index) {
 int* error_builder(const char* message, int size) {
     int* err = safeMalloc(size* sizeof(int));
 
-    for(int i=0; i<size; i++) {
-        err[i] = message[i];
-    }
+    for(int i=0; i<size; i++) err[i] = message[i];
 
     return err;
 }
 
-void st_process_requests(server_thread *st, int socket_fd) {
+void st_process_requests(int socket_fd) {
     /*
      * Notes:
      *
@@ -338,6 +322,7 @@ void st_process_requests(server_thread *st, int socket_fd) {
     int response_head[2] = {-1, -1};
     int* response = NULL;
     int* ressources;
+    int nb_end_wait = 0;
     bool ok;
     switch(cmd[0]) {
         case REQ:
@@ -390,6 +375,11 @@ void st_process_requests(server_thread *st, int socket_fd) {
             for(int i=0; i<nb_ressources; i++) {
                 ressources[i] = cmd[i+3];
             }
+
+            for(int i=0; i<cmd[1]; i++) {
+                int temp = cmd[i+2];
+                int j=0;
+            }
             new_client(cmd[2], ressources);
 
             response_head[0] = ACK;
@@ -410,7 +400,12 @@ void st_process_requests(server_thread *st, int socket_fd) {
                     if (clients[i] == NULL) nb_done++;
                 }
                 if(nb_done == max_index_client) break;
-                sleep(2);
+                nb_end_wait++;
+                if(nb_end_wait >= 5) {
+                    fprintf(stdout, "END error");
+                    exit(253);
+                }
+                sleep(1);
             }
 
             //pret a fermer
@@ -497,12 +492,11 @@ void* st_code(void *param) {
             pthread_exit(NULL);
         }
         if (thread_socket_fd > 0) {
-            st_process_requests(st, thread_socket_fd);
+            st_process_requests(thread_socket_fd);
             close(thread_socket_fd);
             end_time = time(NULL) + max_wait_time;
         }
 
-        int i=0;
         //prends les prochaines connections des clients qui n'ont pas encore ete traitees
         thread_socket_fd = accept(server_socket_fd, (struct sockaddr *) &thread_addr, &socket_len);
     }

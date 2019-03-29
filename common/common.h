@@ -42,7 +42,7 @@ typedef struct cmd_header_t {
     int nb_args;
 } cmd_header_t;
 
-ssize_t read_socket(int sockfd, void *buf, size_t obj_sz, int timeout);
+void read_socket(int sockfd, int *buf, size_t obj_sz);
 
 ssize_t write_socket(int sockfd, void *buf, size_t obj_sz, int timeout, int flags);
 

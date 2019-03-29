@@ -1,6 +1,6 @@
 #include "common.h"
 
-ssize_t read_socket(int sockfd, void *buf, size_t obj_sz, int timeout) {
+ssize_t read_socket_code(int sockfd, void *buf, size_t obj_sz) {
     if (obj_sz == 0) return 1;  //succesfully read 0 bytes
 
     int ret;
@@ -13,7 +13,7 @@ ssize_t read_socket(int sockfd, void *buf, size_t obj_sz, int timeout) {
 
     do {
         // wait for data or timeout
-        ret = poll(fds, 1, timeout);    //-1 si erreur, 0 si timeout, >0 sinon
+        ret = poll(fds, 1, TIMEOUT);    //-1 si erreur, 0 si timeout, >0 sinon
 
         if (ret > 0) {
             if (fds->revents & POLLIN) {
@@ -36,6 +36,24 @@ ssize_t read_socket(int sockfd, void *buf, size_t obj_sz, int timeout) {
     return ret;
 }
 
+void read_socket(int sockfd, int *buf, size_t obj_sz) {
+
+    int len = read_socket_code(sockfd, buf, obj_sz);
+    if (len > 0) {
+        if (len != obj_sz) {
+            fprintf(stderr, "Received invalid command size=%d!\n", len);
+            exit(3);
+        } else {
+            printf("Received command");
+        }
+    } else {
+        if (len == 0) {
+            fprintf(stderr, "Connection timeout\n");
+            exit(30);
+        }
+    }
+}
+
 void *safeMalloc(size_t s) {
     void *temp = malloc(s);
     if (temp == NULL) {
@@ -47,21 +65,24 @@ void *safeMalloc(size_t s) {
 
 int* read_compound(int socket_fd) {
     int head[2] = {-1, -1};
-    read_socket(socket_fd, head, sizeof(head), TIMEOUT);
-
-    int* cmd_receiver = malloc(head[1]* sizeof(int));
-    if(cmd_receiver)
-    read_socket(socket_fd, cmd_receiver, head[1]* sizeof(int), TIMEOUT);    //TODO ceci plante...
+    read_socket(socket_fd, head, sizeof(head));
 
     int real_com_size = head[1]+2;
     int* real_com = malloc(real_com_size* sizeof(int));
     real_com[0] = head[0];
     real_com[1] = head[1];
-    for(int i=0; i<head[1]; i++) {
-        real_com[i+2] = cmd_receiver[i];
-    }
 
-    free(cmd_receiver);
+    if(head[1] > 0) {
+        int* cmd_receiver = safeMalloc(head[1]* sizeof(int));
+        read_socket(socket_fd, cmd_receiver, head[1]* sizeof(int));
+
+        for(int i=0; i<head[1]; i++) {
+            real_com[i+2] = cmd_receiver[i];
+        }
+
+        free(cmd_receiver);
+    };
+
     return real_com;
 }
 

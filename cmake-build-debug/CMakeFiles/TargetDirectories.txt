@@ -1,4 +1,4 @@
 /home/charlie/CLionProjects/OSTP2/cmake-build-debug/CMakeFiles/edit_cache.dir
 /home/charlie/CLionProjects/OSTP2/cmake-build-debug/CMakeFiles/rebuild_cache.dir
-/home/charlie/CLionProjects/OSTP2/cmake-build-debug/CMakeFiles/tp2_client.dir
 /home/charlie/CLionProjects/OSTP2/cmake-build-debug/CMakeFiles/tp2_server.dir
+/home/charlie/CLionProjects/OSTP2/cmake-build-debug/CMakeFiles/tp2_client.dir
