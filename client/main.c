@@ -1,6 +1,18 @@
 #include "client_thread.h"
 
+/**
+ * Initie le serveur
+ *
+ * 1. Envoie BEGIN
+ * 2. Envoie CONF
+ * 3. Attend la reponse
+ */
 void init_server() {
+    /*
+     * On utilise pas read et write compound puisque le traitement est plus facile lorsqu'on a acces aux parties du
+     * message
+     */
+
     int init_socket = c_open_socket();
 
     int RNG = (int) random();
@@ -11,7 +23,8 @@ void init_server() {
 
     int conf1[2] = {1, num_resources};
     write_socket(init_socket, conf1, sizeof(conf1), MSG_MORE);   //envoie CONF nb ressources_max
-    write_socket(init_socket, provisioned_resources, num_resources * sizeof(int), 0);  //envoie le nb de chaque ressources_max
+    //envoie le nb de chaque ressources_max
+    write_socket(init_socket, provisioned_resources, num_resources * sizeof(int), 0);
     print_comm(conf1, 2, true, false);
     print_comm(provisioned_resources, num_resources, false, true);
 
@@ -58,12 +71,16 @@ int main(int argc, char *argv[argc + 1]) {
         ct_create_and_start(&(client_threads[i]));
     }
 
-    //TODO TEMP
+    //Attend les threads, puis free leur representation de ressources
     for(int i=0; i<num_clients; i++) {
         pthread_join(client_threads[i].pt_tid, NULL);
+        free(client_threads[i].used_ressources);
+        free(client_threads[i].max_ressources);
     }
 
     ct_wait_server(num_clients, client_threads);
+
+    free(client_threads);
 
     // Affiche le journal.
     ct_print_results(stdout, true);

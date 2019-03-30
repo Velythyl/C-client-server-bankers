@@ -17,9 +17,6 @@ int main(int argc, char *argv[argc + 1]) {
     // Initialise le serveur.
     st_init();
 
-    // Ouvre un socket
-    st_open_socket();
-
     // Part les fils d'exécution.
     for (unsigned int i = 0; i < num_server_threads; i++) {
         st[i].id = i;
@@ -27,6 +24,7 @@ int main(int argc, char *argv[argc + 1]) {
         pthread_create(&(st[i].pt_tid), &(st[i].pt_attr), &st_code, &(st[i]));
     }
 
+    // Attend les threads et detruit leurs mutex
     for (unsigned int i = 0; i < num_server_threads; i++) {
         pthread_join(st[i].pt_tid, NULL);
         pthread_mutex_destroy(&client_mutex);

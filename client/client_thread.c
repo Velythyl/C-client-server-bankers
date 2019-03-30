@@ -30,31 +30,40 @@ unsigned int count_dispatched = 0;  //NOTE: on assume que c'est en reponse a CLO
 // Nombre total de requêtes envoyées.
 unsigned int request_sent = 0;  //NOTE: on assume que c'est le nombre de REQ, pas le nombre de REQ uniques
 
-// retourne un nb de 0 a high-1
+/**
+ * Retourne un nb de 0 a high-1
+ *
+ * @param high  la borne superieure excluse du nb
+ * @return      le nb
+ */
 int random_bounded(int high) {
-    if(high == 0) return 0;
+    if(high == 0) return 0; //error handling simple
 
     long r = random();
-    if(r<0) r= -r;
+    if(r<0) r= -r;          //abs du random
 
     return (int) (r % high); //safe puisque high est un int, donc on est surs que random % high fitte dans un int
 }
 
 
-// Vous devez modifier cette fonction pour faire l'envoie des requêtes
-// Les ressources_max demandées par la requête doivent être choisies aléatoirement
-// (sans dépasser le maximum pour le client). Elles peuvent être positives
-// ou négatives.
-// Assurez-vous que la dernière requête d'un client libère toute les ressources_max
-// qu'il a jusqu'alors accumulées.
+/**
+ * Envoie une requete REQ dont la tete est head et le corps est request.
+ *
+ * Traite le code de reponse a cette requete, puis le return
+ *
+ * @param ct        Le client thread qui envoie le REQ
+ * @param head      La tete de REQ
+ * @param request   Le corps de REQ
+ * @return          Le code de reponse
+ */
 int send_request(client_thread* ct, int* head, int* request) {
     __atomic_add_fetch(&request_sent, 1, __ATOMIC_SEQ_CST);
 
     int socket = c_open_socket();
 
-    write_compound(socket, head, request);
+    write_compound(socket, head, request);  //lance la REQ
 
-    int* response = read_compound(socket);
+    int* response = read_compound(socket);  //recoit la reponse
 
     close(socket);
 
@@ -63,17 +72,20 @@ int send_request(client_thread* ct, int* head, int* request) {
     switch(code) {
         case WAIT:
             __atomic_add_fetch(&count_on_wait, 1, __ATOMIC_SEQ_CST);
-            sleep((unsigned int) response[2]);
+            sleep((unsigned int) response[2]);  //attend le nb de sec dans WAIT
             break;
 
         case ACK:
-            for(int i=0; i<num_resources; i++) ct->used_ressources[i] += request[i+1];
+            for(int i=0; i<num_resources; i++) {
+                ct->used_ressources[i] += request[i+1]; //REQ acceptee donc on update ct->used_ressources
+            }
             __atomic_add_fetch(&count_accepted, 1, __ATOMIC_SEQ_CST);
             break;
 
         case ERR:
             __atomic_add_fetch(&count_invalid, 1, __ATOMIC_SEQ_CST);
             break;
+
         default:
             fprintf(stderr, "WRONG COMMAND");
             exit(21);
@@ -83,6 +95,15 @@ int send_request(client_thread* ct, int* head, int* request) {
     return code;
 }
 
+/**
+ * Fin du client ct
+ *
+ * 1. Envoie CLO
+ * 2. Recoit la reponse
+ * 3. Se ferme en mettant ct->id a NULL
+ *
+ * @param ct    le client qui se ferme
+ */
 void ct_end(client_thread* ct) {
     int socket = c_open_socket();
 
@@ -94,7 +115,7 @@ void ct_end(client_thread* ct) {
 
     close(socket);
 
-    if(response[0] == ERR) {
+    if(response[0] == ERR) {    //
         exit(204);
     } else if(response[0] == ACK) {
         __atomic_add_fetch(&count_dispatched, 1, __ATOMIC_SEQ_CST);
@@ -104,7 +125,12 @@ void ct_end(client_thread* ct) {
     ct->id = NULL;
 }
 
-
+/**
+ * Le code principal des clients. Lance leur INIT, puis genere des REQ qu'on envoie avec send_request
+ *
+ * @param param le client
+ * @return
+ */
 void *ct_code(void *param) {
     int socket = c_open_socket();
     client_thread *ct = (client_thread *) param;
@@ -113,46 +139,52 @@ void *ct_code(void *param) {
     write_socket(socket, init, sizeof(init), 0);
     print_comm(init, 2, true, false);
 
+    //Genere la commande de depart
     int* init_cmd = safeMalloc((num_resources+1)* sizeof(int));
     init_cmd[0] = ct->id;
     for (int i = 0; i < num_resources; i++) {
         init_cmd[i + 1] = random_bounded(provisioned_resources[i] + 1);    //on veut de 0 a MAX RESSOURCE
 
-        ct->max_ressources[i] = init_cmd[i+1];  //max est le random de provisionned
+        ct->max_ressources[i] = init_cmd[i+1];  //max est le random de provisionned (donc init[i])
         ct->used_ressources[i] = 0;             //used est tout a 0
     }
 
+    //lance le init
     write_socket(socket, init_cmd, (num_resources+1)* sizeof(int), 0);
     print_comm(init_cmd, num_resources+1, false, true);
 
-    int* response = read_compound(socket);
-    free(response);
+    free(init_cmd);
 
+    int* response = read_compound(socket);
+    if(response[0] != ACK) {
+        fprintf(stderr, "INIT ERR");
+        exit(490);
+    }
+
+    free(response);
     close(socket);
 
     for (unsigned int request_id = 0; request_id < num_request_per_client; request_id++) {
-
 
         int *request = safeMalloc((num_resources + 1) * sizeof(int));
         request[0] = ct->id;
         for (int i = 0; i < num_resources; i++) {
 
-            if(request_id == num_request_per_client-1) {                          //si derniere REQ
+            if(request_id == num_request_per_client-1) {        //si derniere REQ:
                 request[i + 1 ] = -(ct->used_ressources[i]);    //libere tout ce qu'on avait
 
-            } else {
-                //de 0 a (max de ressource i +1)-1
+            } else {                                            //sinon
+                //si positif: de 0 a (max de ressource i +1)-1
                 if(random_bounded(2)) request[i + 1] = random_bounded(ct->max_ressources[i]+1);
-                //de 0 a (used i +1)-1
+                //sinon: de 0 a (used i +1)-1
                 else request[i + 1] = -random_bounded(ct->used_ressources[i]+1);
             }
         }
 
         int head[2] = {REQ, num_resources+1};
-
         fprintf(stdout, "Client %d is preparing its %d request\t", ct->id, request_id);
 
-        while(send_request(ct, head, request) == WAIT);
+        while(send_request(ct, head, request) == WAIT); //Si on recoit un wait, on relance la REQ
 
         free(request);
 
@@ -167,12 +199,12 @@ void *ct_code(void *param) {
 }
 
 
-//
-// Vous devez changer le contenu de cette fonction afin de régler le
-// problème de synchronisation de la terminaison.
-// Le client doit attendre que le serveur termine le traitement de chacune
-// de ses requêtes avant de terminer l'exécution.
-//
+/**
+ * Dit au serveur de se fermer et attend sa reponse
+ *
+ * @param num_clients
+ * @param client_threads
+ */
 void ct_wait_server(int num_clients, client_thread* client_threads) {
 
     while(true) {
@@ -189,6 +221,7 @@ void ct_wait_server(int num_clients, client_thread* client_threads) {
              */
             if (client_threads[i].id == NULL) nb_done++;
         }
+
         if(nb_done == num_clients) break;
     }
 
@@ -198,14 +231,18 @@ void ct_wait_server(int num_clients, client_thread* client_threads) {
     write_socket(socket, end, 2* sizeof(int), 0);
     print_comm(end, 2, true, true);
 
-    int* response = read_compound(socket);
+    int* response = read_compound(socket);  //ceci fait attendre le client
+    if(response[0] != ACK) {
+        fprintf(stderr, "END error");
+        exit(94);
+    }
     free(response);
 }
 
 void ct_create_and_start(client_thread *ct) {
     ct->id = count++;   //provient de ct_init()
-    ct->max_ressources = safeMalloc(num_resources* sizeof(int));
-    ct->used_ressources = safeMalloc(num_resources*sizeof(int));
+    ct->max_ressources = safeMalloc(num_resources* sizeof(int));    //le max de ressources du client
+    ct->used_ressources = safeMalloc(num_resources*sizeof(int));    //les ressources utilisees du client
 
     pthread_attr_init(&(ct->pt_attr));
     pthread_attr_setdetachstate(&(ct->pt_attr), PTHREAD_CREATE_DETACHED);
@@ -233,6 +270,11 @@ void ct_print_results(FILE *fd, bool verbose) {
     }
 }
 
+/**
+ * Ouvre un socket et le connecte au serveur.
+ *
+ * @return  le socket
+ */
 int c_open_socket() {
     int socket_fd = -1;
     socket_fd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);

@@ -167,6 +167,10 @@ void st_init() {
     int begin[3] = {-1, -1, -1};
     read_socket(new_socket, begin, sizeof(begin));   //attend 30 secondes: on laisse beaucoup de temps au client
 
+    if(begin[1] <= 0) {
+        fprintf(stdout, "Begin error");
+        exit(58);
+    }
     /*
      * Pourrait etre fait avec read_compound, mais plus efficace de le faire comme ceci: on doit aussi assigner
      * nb_ressources et ressources_max, donc il est plus simple de juste acceder aux sous-parties de read_compound
@@ -174,6 +178,11 @@ void st_init() {
     int conf1[2] = {-1, -1};
     read_socket(new_socket, conf1, sizeof(conf1));
     nb_ressources = conf1[1];
+
+    if(conf1[1] <= 0) {
+        fprintf(stdout, "Conf error");
+        exit(58);
+    }
 
     available = safeMalloc(nb_ressources * sizeof(int));
     read_socket(new_socket, available, nb_ressources* sizeof(int));
@@ -185,7 +194,6 @@ void st_init() {
     // l'algorithme du banquier.
 
     close(new_socket);
-    close(server_socket_fd);
 
     /*
      * nb initial de clients suppose etre deux (evidemment ici on pourrait mettre 5, mais ceci est plus robuste si
@@ -267,10 +275,6 @@ int bankers(int *work, int *finish) {
     if(safe == false) return WAIT;
     else return ACK;
 }
-
-/**
-
- */
 
 /**
  * Permet d'initialiser les structures pour le banquier et de les free elegamment.
@@ -367,27 +371,22 @@ int* error_builder(const char* message, int size) {
  * @param socket_fd Le socket auquel est connecte le client faisant la requete
  */
 void st_process_requests(int socket_fd) {
-    /*
-     * Notes:
-     *
-     * premier truc recu sera un INI puis les REQ
-     */
-
     int* cmd = read_compound(socket_fd);    //la commande du client
 
-    int response_head[2] = {-1, -1};
-    int* response = NULL;
-    int* ressources;
-    int nb_end_wait = 0;
-    bool ok;
+    int response_head[2] = {-1, -1};    //la tete de la reponse (pour write_compound)
+    int* response = NULL;               //le corps de la reponse
+
+    //(pas le droit de declarer dans un switch)
+    int* ressources;                    //utilise dans certains cas du switch
+    int nb_end_wait = 0;                //timeout du END
+    bool ok;                            //verif du CLO
     switch(cmd[0]) {
         case REQ:
             __atomic_add_fetch(&request_processed, 1, __ATOMIC_SEQ_CST);
 
             ressources = safeMalloc(nb_ressources * sizeof(int));
 
-            for(int i=0; i<nb_ressources; i++) ressources[i] = cmd[i+3];
-
+            for(int i=0; i<nb_ressources; i++) ressources[i] = cmd[i+3];    //ressources demandees dans le REQ
 
             switch (lock_bankers(ressources, cmd[2])) {
                 case ERR_NEEDED:
@@ -428,9 +427,7 @@ void st_process_requests(int socket_fd) {
         case INIT:
             ressources = safeMalloc(nb_ressources * sizeof(int));
 
-            for(int i=0; i<nb_ressources; i++) {
-                ressources[i] = cmd[i+3];
-            }
+            for(int i=0; i<nb_ressources; i++) ressources[i] = cmd[i+3];
 
             new_client(cmd[2], ressources);
 
@@ -496,6 +493,7 @@ void st_process_requests(int socket_fd) {
             }
 
             break;
+        //erreur si BEGIN ou CONF
         case BEGIN:
         case CONF:
             response_head[0] = ERR;
@@ -517,6 +515,12 @@ void st_process_requests(int socket_fd) {
     close(socket_fd);
 }
 
+/**
+ * Boucle principale des server threads
+ *
+ * @param param la structure representant le thread
+ * @return
+ */
 void* st_code(void *param) {
     server_thread *st = (server_thread *) param;
 
@@ -560,9 +564,9 @@ void* st_code(void *param) {
 }
 
 
-//
-// Ouvre un socket pour le serveur.
-//
+/**
+ * Ouvre un socket pour le serveur
+ */
 void st_open_socket() {
     server_socket_fd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
 
