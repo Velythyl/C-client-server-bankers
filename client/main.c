@@ -6,12 +6,12 @@ void init_server() {
     int RNG = (int) random();
 
     int begin[3] = {BEGIN, 1, RNG};
-    write(init_socket, begin, sizeof(begin));
+    write_socket(init_socket, begin, sizeof(begin), 0);
     print_comm(begin, 3, true, true);
 
     int conf1[2] = {1, num_resources};
-    write(init_socket, conf1, sizeof(conf1));   //envoie CONF nb ressources_max
-    write(init_socket, provisioned_resources, num_resources * sizeof(int));  //envoie le nb de chaque ressources_max
+    write_socket(init_socket, conf1, sizeof(conf1), MSG_MORE);   //envoie CONF nb ressources_max
+    write_socket(init_socket, provisioned_resources, num_resources * sizeof(int), 0);  //envoie le nb de chaque ressources_max
     print_comm(conf1, 2, true, false);
     print_comm(provisioned_resources, num_resources, false, true);
 

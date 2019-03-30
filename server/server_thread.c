@@ -46,15 +46,30 @@ unsigned int clients_ended = 0;
 int nb_ressources = -1;
 int *available;
 
+/*
+ * Note sur les clients: on assume que les ID des clients recus dans le serveur on ete generes sequetiellement dans le
+ * client. Autrement dit, on assume que si on recoit un client d'ID 3000, il y aura AUSSI des clients d'ID de 0 a 3000.
+ *
+ * Comme ca, on peut facilement generer un tableau pour les clients dont l'index est l'ID: si on veut process un REQ du
+ * client 3, on a qu'a acceder a clients[3] et on recoit le client* du client 3. Ceci nous evite de chercher le client
+ * dans une liste chainee ou dans un tableau a chaque fois qu'on veut acceder au client X.
+ *
+ * De plus, c'est logique, puisque la facon la plus simple de faire des ID uniques est simplement d'incrementer un
+ * counter.
+ */
+
 pthread_mutex_t client_mutex;
-typedef struct client client;   //chaque client aura sa representation client
+typedef struct client client;   //chaque client aura sa representation client*
 struct client {
-    int* m_ressources;
-    int* u_ressources;
+    int* m_ressources;  //maximum de chaque ressources
+    int* u_ressources;  //ressources utilisees
 };
 client** clients;
 int max_index_client;
 
+/**
+ * Cree la liste des clients (initialement, on accepte le ID le plus grand 2
+ */
 void create_clients() {
     max_index_client = 2;
 
@@ -63,26 +78,37 @@ void create_clients() {
     for(int i=0; i<max_index_client; i++) clients[i] = NULL;
 }
 
+/**
+ * Grossit la table des clients pour qu'elle accepte un nouvel ID plus grand
+ *
+ * @param new_max_index le nouvel index plus grand
+ */
 void resize_clients(int new_max_index) {
-    if(new_max_index < max_index_client) return;
+    if(new_max_index < max_index_client) return;    //si le new ID entre deja dans la table, rien a faire
 
     client** old = clients;
-    clients = safeMalloc((new_max_index+1) * sizeof(client*));
+    clients = safeMalloc((new_max_index+1) * sizeof(client*));  //cree un nouveau tableau
 
     for(int i=0; i<new_max_index+1; i++) {
-        clients[i] = NULL;
+        clients[i] = NULL;      //initie tous les client* a NULL
     }
 
     for(int i=0; i<max_index_client+1; i++) {
-        clients[i] = old[i];
+        clients[i] = old[i];    //place les ancien client* dans le nouveau clients
     }
 
-    max_index_client = new_max_index;
+    max_index_client = new_max_index;   //update le max index
     free(old);  //free pas les clients de old car ils sont maintenant dans clients
 }
 
+/**
+ * Cree un nouveau client
+ *
+ * @param id            le ID du client
+ * @param ressources    les ressources max du client
+ */
 void new_client(unsigned int id, int* ressources) {
-    pthread_mutex_lock(&client_mutex);
+    pthread_mutex_lock(&client_mutex);  //lock car on accede et modifie a une ressource partagee
 
     resize_clients(id); //s'assure que ID fitte dans clients[ID]
 
@@ -91,29 +117,36 @@ void new_client(unsigned int id, int* ressources) {
         cl->m_ressources = ressources;
 
         cl->u_ressources = safeMalloc(nb_ressources * sizeof(int));
-        for(int i=0; i<nb_ressources; i++) cl->u_ressources[i] = 0;
+        for(int i=0; i<nb_ressources; i++) cl->u_ressources[i] = 0; //utilise rien au depart
 
-        clients[id] = cl;
+        clients[id] = cl;   //update la table
 
         fprintf(stdout, "Client %i: nb de m_ressources ", id);
         print_comm(cl->m_ressources, nb_ressources, false, true);
 
-    } else exit(204);
+    } else exit(204);   //si le client a cet ID existe deja on a une erreur critique
 
     __atomic_add_fetch(&nb_registered_clients, 1, __ATOMIC_SEQ_CST);
     pthread_mutex_unlock(&client_mutex);
 }
 
-/*
- * Ferme le client, mais le laisse alloc: on veut juste qu'
+/**
+ * Ferme le client et met clients[index] a NULL pour indique sa fermeture pour bankers
  */
 void close_client(int index) {
+    pthread_mutex_lock(&client_mutex);  //lock car on accede et modifie a une ressource partagee
+
     free(clients[index]->u_ressources);
     free(clients[index]->m_ressources);
     free(clients[index]);
     clients[index] = NULL;
+
+    pthread_mutex_unlock(&client_mutex);
 }
 
+/**
+ * Initie le serveur
+ */
 void st_init() {
     nb_registered_clients = 0;  // Initialise le nombre de clients connecté.
 
@@ -146,12 +179,11 @@ void st_init() {
     read_socket(new_socket, available, nb_ressources* sizeof(int));
 
     int ok[3] = {ACK, 1, begin[2]};
-    write(new_socket, ok, sizeof(ok));
+    write_socket(new_socket, ok, sizeof(ok), 0);
 
     // Attend la connection d'un client et initialise les structures pour
     // l'algorithme du banquier.
 
-    // END TODO
     close(new_socket);
     close(server_socket_fd);
 
@@ -225,7 +257,7 @@ int bankers(int *work, int *finish) {
 
     //etape 4
     bool safe = true;
-    for(int i=0; i<max_index_client+1; i++) {
+    for(int i=0; i<max_index_client+1; i++) {   //verifie si tout est safe
         if(finish[i] == false) {
             safe = false;
             break;
@@ -236,10 +268,18 @@ int bankers(int *work, int *finish) {
     else return ACK;
 }
 
-/*
+/**
+
+ */
+
+/**
  * Permet d'initialiser les structures pour le banquier et de les free elegamment.
  *
  * De plus, separe la logique de requete/index de celle de work/finish
+ *
+ * @param request   la requete
+ * @param index     l'index du client qui fait la requete
+ * @return          le code de retour
  */
 int call_bankers(int* request, int index) {
     client* cl = clients[index];
@@ -274,7 +314,7 @@ int call_bankers(int* request, int index) {
     free(work), free(finish);
 
     if(code != ACK) {
-        for(int i=0; i<nb_ressources; i++) {
+        for(int i=0; i<nb_ressources; i++) {    //defait l'allocation hypothetique
             cl->u_ressources[i] -= request[i];
             available[i] += request[i];
         }
@@ -283,10 +323,14 @@ int call_bankers(int* request, int index) {
     return code;
 }
 
-/*
- * Permet de verouiller les strucutures pour bankers, et ensuite d'imprimer le code de retour de l'algo
- */
 pthread_mutex_t bankers_mutex;  // le mutex de l'algo du banquier
+/**
+ * Permet de verouiller les strucutures pour bankers, et ensuite d'imprimer le code de retour de l'algo
+ *
+ * @param request   la requete
+ * @param index     l'ID du client qui fait la requete
+ * @return          le code de retour
+ */
 int lock_bankers(int *request, int index) {
     pthread_mutex_lock(&bankers_mutex); //lock car on depend de available
     pthread_mutex_lock(&client_mutex);
@@ -301,6 +345,14 @@ int lock_bankers(int *request, int index) {
     return code;
 }
 
+/**
+ * Construit une erreur qui dit "MESSAGE" et retourne le pointeur (il sera free() dans st_process_requests. On le met
+ * dans un int* puisque char entre toujours dans un int
+ *
+ * @param message   Le message d'erreur
+ * @param size      La grosseur du message
+ * @return          Le pointeur vers le message
+ */
 int* error_builder(const char* message, int size) {
     int* err = safeMalloc(size* sizeof(int));
 
@@ -309,6 +361,11 @@ int* error_builder(const char* message, int size) {
     return err;
 }
 
+/**
+ * Process les requetes envoyees a socket_fd
+ *
+ * @param socket_fd Le socket auquel est connecte le client faisant la requete
+ */
 void st_process_requests(int socket_fd) {
     /*
      * Notes:
@@ -316,7 +373,7 @@ void st_process_requests(int socket_fd) {
      * premier truc recu sera un INI puis les REQ
      */
 
-    int* cmd = read_compound(socket_fd);
+    int* cmd = read_compound(socket_fd);    //la commande du client
     print_comm(cmd, cmd[1]+2, true, true);
 
     int response_head[2] = {-1, -1};
@@ -376,10 +433,6 @@ void st_process_requests(int socket_fd) {
                 ressources[i] = cmd[i+3];
             }
 
-            for(int i=0; i<cmd[1]; i++) {
-                int temp = cmd[i+2];
-                int j=0;
-            }
             new_client(cmd[2], ressources);
 
             response_head[0] = ACK;

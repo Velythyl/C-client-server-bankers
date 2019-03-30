@@ -48,7 +48,6 @@ int random_bounded(int high) {
 // Assurez-vous que la dernière requête d'un client libère toute les ressources_max
 // qu'il a jusqu'alors accumulées.
 int send_request(client_thread* ct, int* head, int* request) {
-    //TODO lock pour les count, ou encore utiliser un adder atomique?
     __atomic_add_fetch(&request_sent, 1, __ATOMIC_SEQ_CST);
 
     int socket = c_open_socket();
@@ -158,7 +157,7 @@ void *ct_code(void *param) {
 
         int head[2] = {REQ, num_resources+1};
 
-        fprintf(stdout, "Client %d is preparing its %d request\n", ct->id, request_id);
+        fprintf(stdout, "Client %d is preparing its %d request\t", ct->id, request_id);
 
         while(send_request(ct, head, request) == WAIT);
 
@@ -203,7 +202,7 @@ void ct_wait_server(int num_clients, client_thread* client_threads) {
     int socket = c_open_socket();
     int end[2] = {END, 0};
 
-    write_socket(socket, end, 2* sizeof(int), TIMEOUT, 0);
+    write_socket(socket, end, 2* sizeof(int), 0);
     print_comm(end, 2, true, true);
 
     int* response = read_compound(socket);
@@ -256,7 +255,7 @@ int c_open_socket() {
     serv_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
     serv_addr.sin_port = htons(port_number);
 
-    printf("connecting to server... ");
+    printf("connecting to server...\t");
     while (connect(socket_fd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0);
 
     return socket_fd;

@@ -1,6 +1,6 @@
 #include "common.h"
 
-ssize_t read_socket_code(int sockfd, void *buf, size_t obj_sz) {
+ssize_t op_socket_code(bool read, int sockfd, void *buf, size_t obj_sz, int flags) {
     if (obj_sz == 0) return 1;  //succesfully read 0 bytes
 
     int ret;
@@ -8,7 +8,10 @@ ssize_t read_socket_code(int sockfd, void *buf, size_t obj_sz) {
 
     struct pollfd fds[1];
     fds[0].fd = sockfd;
-    fds[0].events = POLLIN | POLLPRI;
+
+    if(read) fds[0].events = POLLIN | POLLPRI;
+    else fds[0].events = POLLOUT | POLLPRI;
+
     fds[0].revents = 0;
 
     do {
@@ -16,8 +19,11 @@ ssize_t read_socket_code(int sockfd, void *buf, size_t obj_sz) {
         ret = poll(fds, 1, TIMEOUT);    //-1 si erreur, 0 si timeout, >0 sinon
 
         if (ret > 0) {
-            if (fds->revents & POLLIN) {
-                ret = recv(sockfd, (char *) buf + len, obj_sz - len, 0);
+            if ((read ? fds->revents & POLLIN : fds->revents & POLLOUT)) {
+
+                if(read) ret = recv(sockfd, (char *) buf + len, obj_sz - len, flags);
+                else ret = send(sockfd, (char *) buf + len, obj_sz - len, flags);
+
                 if (ret < 0) {
                     // abort connection
                     perror("recv()");
@@ -36,15 +42,16 @@ ssize_t read_socket_code(int sockfd, void *buf, size_t obj_sz) {
     return ret;
 }
 
-void read_socket(int sockfd, int *buf, size_t obj_sz) {
+void err_h_socket(bool read, int sockfd, int *buf, size_t obj_sz, int flags) {
 
-    int len = read_socket_code(sockfd, buf, obj_sz);
+    int len = op_socket_code(read, sockfd, buf, obj_sz, flags);
+
     if (len > 0) {
         if (len != obj_sz) {
             fprintf(stderr, "Received invalid command size=%d!\n", len);
             exit(3);
         } else {
-            printf("Received command");
+            return;
         }
     } else {
         if (len == 0) {
@@ -54,13 +61,12 @@ void read_socket(int sockfd, int *buf, size_t obj_sz) {
     }
 }
 
-void *safeMalloc(size_t s) {
-    void *temp = malloc(s);
-    if (temp == NULL) {
-        fprintf(stderr, "CRITICAL MALLOC ERROR");
-        exit(1);
-    }
-    return temp;
+void read_socket(int sockfd, int *buf, size_t obj_sz) {
+    err_h_socket(true, sockfd, buf, obj_sz, 0);
+}
+
+void write_socket(int sockfd, void *buf, size_t obj_sz, int flags) {
+    err_h_socket(false, sockfd, buf, obj_sz, flags);
 }
 
 int* read_compound(int socket_fd) {
@@ -86,49 +92,22 @@ int* read_compound(int socket_fd) {
     return real_com;
 }
 
-ssize_t write_socket(int sockfd, void *buf, size_t obj_sz, int timeout, int flag) {
-    if (obj_sz == 0) return 1;  //succesfully read 0 bytes
-
-    int ret;
-    int len = 0;
-
-    struct pollfd fds[1];
-    fds[0].fd = sockfd;
-    fds[0].events = POLLOUT | POLLPRI;
-    fds[0].revents = 0;
-
-    do {
-        // wait for data or timeout
-        ret = poll(fds, 1, timeout);    //-1 si erreur, 0 si timeout, >0 sinon
-
-        if (ret > 0) {
-            if (fds->revents & POLLOUT) {
-                ret = send(sockfd, (char *) buf + len, obj_sz - len, flag);
-                if (ret < 0) {
-                    // abort connection
-                    perror("send()");
-                    return -1;
-                }
-                len += ret;
-            }
-        } else {
-            // TCP error or timeout
-            if (ret < 0) {
-                perror("poll()");
-            }
-            break;
-        }
-    } while (ret != 0 && len < obj_sz);
-    return ret;
-}
-
 void write_compound(int socket, int head[2], int* message) {
     int message_size = head[1];
 
-    write_socket(socket, head, 2 * sizeof(int), TIMEOUT, (message_size==0? 0: MSG_MORE));
+    write_socket(socket, head, 2 * sizeof(int), (message_size==0? 0: MSG_MORE));
     if(message_size == 0) return;
 
-    write_socket(socket, message, message_size * sizeof(int), TIMEOUT, 0);
+    write_socket(socket, message, message_size * sizeof(int), 0);
+}
+
+void *safeMalloc(size_t s) {
+    void *temp = malloc(s);
+    if (temp == NULL) {
+        fprintf(stderr, "CRITICAL MALLOC ERROR");
+        exit(1);
+    }
+    return temp;
 }
 
 void print_comm(int *arr, int size, bool print_enum, bool print_n) {
