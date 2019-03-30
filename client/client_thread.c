@@ -53,11 +53,8 @@ int send_request(client_thread* ct, int* head, int* request) {
     int socket = c_open_socket();
 
     write_compound(socket, head, request);
-    print_comm(head, 2, true, false);
-    print_comm(request, num_resources+1, false, true);
 
     int* response = read_compound(socket);
-    print_comm(response, response[1]+2, true, true);
 
     close(socket);
 
@@ -92,11 +89,8 @@ void ct_end(client_thread* ct) {
     int head[2] = {CLO, 1};
 
     write_compound(socket, head, &ct->id);
-    print_comm(head, 2, true, false);
-    print_comm(&ct->id, 1, false, true);
 
     int* response = read_compound(socket);
-    print_comm(response, response[1]+2, true, true);
 
     close(socket);
 
@@ -116,7 +110,7 @@ void *ct_code(void *param) {
     client_thread *ct = (client_thread *) param;
 
     int init[2] = {INIT, num_resources+1};
-    write(socket, init, sizeof(init));
+    write_socket(socket, init, sizeof(init), 0);
     print_comm(init, 2, true, false);
 
     int* init_cmd = safeMalloc((num_resources+1)* sizeof(int));
@@ -128,11 +122,10 @@ void *ct_code(void *param) {
         ct->used_ressources[i] = 0;             //used est tout a 0
     }
 
-    write(socket, init_cmd, (num_resources+1)* sizeof(int));
+    write_socket(socket, init_cmd, (num_resources+1)* sizeof(int), 0);
     print_comm(init_cmd, num_resources+1, false, true);
 
     int* response = read_compound(socket);
-    print_comm(response, response[1] + 2, true, false);
     free(response);
 
     close(socket);
@@ -206,7 +199,6 @@ void ct_wait_server(int num_clients, client_thread* client_threads) {
     print_comm(end, 2, true, true);
 
     int* response = read_compound(socket);
-    print_comm(response, response[1]+2, true, true);
     free(response);
 }
 

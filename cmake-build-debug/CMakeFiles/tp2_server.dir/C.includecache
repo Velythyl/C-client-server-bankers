@@ -6,7 +6,11 @@
 
 #IncludeRegexTransform: 
 
-../common/common.h
+/home/charlie/CLionProjects/OSTP2/common/common.c
+common.h
+/home/charlie/CLionProjects/OSTP2/common/common.h
+
+/home/charlie/CLionProjects/OSTP2/common/common.h
 stdbool.h
 -
 stdio.h
@@ -29,22 +33,4 @@ netinet/in.h
 -
 arpa/inet.h
 -
-
-/home/charlie/CLionProjects/OSTP2/server/server_thread.c
-common.h
-/home/charlie/CLionProjects/OSTP2/server/common.h
-server_thread.h
-/home/charlie/CLionProjects/OSTP2/server/server_thread.h
-netinet/in.h
--
-pthread.h
--
-unistd.h
--
-string.h
--
-
-/home/charlie/CLionProjects/OSTP2/server/server_thread.h
-common.h
-/home/charlie/CLionProjects/OSTP2/server/common.h
 

@@ -89,6 +89,7 @@ int* read_compound(int socket_fd) {
         free(cmd_receiver);
     };
 
+    print_comm(real_com, real_com[1]+2, true, true);
     return real_com;
 }
 
@@ -99,6 +100,9 @@ void write_compound(int socket, int head[2], int* message) {
     if(message_size == 0) return;
 
     write_socket(socket, message, message_size * sizeof(int), 0);
+
+    print_comm(head, 2, true, false);
+    print_comm(message, head[1]+1, false, true);
 }
 
 void *safeMalloc(size_t s) {

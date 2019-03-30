@@ -374,7 +374,6 @@ void st_process_requests(int socket_fd) {
      */
 
     int* cmd = read_compound(socket_fd);    //la commande du client
-    print_comm(cmd, cmd[1]+2, true, true);
 
     int response_head[2] = {-1, -1};
     int* response = NULL;
