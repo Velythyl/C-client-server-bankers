@@ -74,8 +74,6 @@ int main(int argc, char *argv[argc + 1]) {
     //Attend les threads, puis free leur representation de ressources
     for(int i=0; i<num_clients; i++) {
         pthread_join(client_threads[i].pt_tid, NULL);
-        free(client_threads[i].used_ressources);
-        free(client_threads[i].max_ressources);
     }
 
     ct_wait_server(num_clients, client_threads);

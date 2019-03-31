@@ -21,9 +21,6 @@ struct client_thread {
     unsigned int id;
     pthread_t pt_tid;
     pthread_attr_t pt_attr;
-
-    int* max_ressources;
-    int* used_ressources;
 };
 
 

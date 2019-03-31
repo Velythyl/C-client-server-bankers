@@ -287,13 +287,14 @@ int bankers(int *work, int *finish) {
  */
 int call_bankers(int* request, int index) {
     client* cl = clients[index];
-    if(cl == NULL) return ERR;                                                      //si essaie d'allouer a un client pas init
+    if(cl == NULL) return ERR;                         //si essaie d'allouer a un client pas init
     for(int i=0; i<nb_ressources; i++) {
-        //if(request[i] > (cl->m_ressources[i] - cl->u_ressources[i])) return ERR_NEEDED;    //Si Requestedi[ j ] ≤
-        // Needed[ i,j ] for any j erreur!
         if((request[i]<0) && ((cl->u_ressources[i] + request[i])<0)) return ERR_NEGA;    //si free plus  qu'on a
+        if(request[i] > (cl->m_ressources[i] - cl->u_ressources[i])) return ERR_NEEDED;  //si REQ plus que NEEDED
+        if(request[i] > available[i]) return WAIT;                                       //si REQ>avail
     }
 
+    //pourrait etre dans la boucle ci-haut, mais a cause des return on ne pourrait pas defaire la situation hypothetique
     for(int i=0; i<nb_ressources; i++) {
         cl->u_ressources[i] += request[i];
         available[i] -= request[i];
@@ -506,7 +507,7 @@ void st_process_requests(int socket_fd) {
             exit(21);
     }
 
-    write_compound(socket_fd, response_head, response);
+    write_compound(socket_fd, response_head, response, false);
 
     free(cmd);
     if(response != NULL) free(response);
@@ -599,13 +600,20 @@ void st_print_results(FILE *fd, bool verbose) {
     if (fd == NULL) fd = stdout;
     if (verbose) {
         fprintf(fd, "\n---- Résultat du serveur ----\n");
+        fflush(fd);
         fprintf(fd, "Requêtes acceptées: %d\n", count_accepted);
+        fflush(fd);
         fprintf(fd, "Requêtes : %d\n", count_wait);
+        fflush(fd);
         fprintf(fd, "Requêtes invalides: %d\n", count_invalid);
+        fflush(fd);
         fprintf(fd, "Clients : %d\n", count_dispatched);
+        fflush(fd);
         fprintf(fd, "Requêtes traitées: %d\n", request_processed);
+        fflush(fd);
     } else {
         fprintf(fd, "%d %d %d %d %d\n", count_accepted, count_wait,
                 count_invalid, count_dispatched, request_processed);
+        fflush(fd);
     }
 }

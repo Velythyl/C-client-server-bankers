@@ -52,7 +52,7 @@ void print_comm(int *arr, int size, bool print_enum, bool print_n);
 
 int* read_compound(int socket_fd);
 
-void write_compound(int socket, int head[2], int* message);
+void write_compound(int socket, int head[2], int* message, bool print);
 
 #endif
 //BEGIN 1 7382479

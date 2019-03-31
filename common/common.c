@@ -150,7 +150,7 @@ int* read_compound(int socket_fd) {
  * @param head      la tete de message de forme [CMD, nbArgs]
  * @param message   le corps du message
  */
-void write_compound(int socket, int head[2], int* message) {
+void write_compound(int socket, int head[2], int* message, bool print) {
     int message_size = head[1];
 
     //flag pour plus s'assure que la connection est plus stable
@@ -160,8 +160,8 @@ void write_compound(int socket, int head[2], int* message) {
 
     write_socket(socket, message, message_size * sizeof(int), 0);
 
-    print_comm(head, 2, true, false);
-    print_comm(message, head[1]+1, false, true);
+    if(print) print_comm(head, 2, true, false);
+    if(print) print_comm(message, head[1], false, true);
 }
 
 /**
@@ -227,11 +227,11 @@ void print_comm(int *arr, int size, bool print_enum, bool print_n) {
                 temp = "CLO";
                 break;
             case ERR:
-                fprintf(stderr, "ERR %d ", arr[1]);
+                fprintf(stdout, "ERR %d ", arr[1]);
                 for (int i = 2; i < size; i++) {    //imprime les int comme s'ils etaient des char (safe)
-                    fprintf(stderr, "%c", arr[i]);
+                    fprintf(stdout, "%c", arr[i]);
                 }
-                if(print_n) fprintf(stderr, "\n");
+                if(print_n) fprintf(stdout, "\n");
                 return;
             case NB_COMMANDS:
                 temp = "NB_COMMANDS";
