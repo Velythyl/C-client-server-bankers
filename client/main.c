@@ -65,15 +65,12 @@ int main(int argc, char *argv[argc + 1]) {
 
     init_server();
 
+    init_client();
+
     // thread init
     client_thread *client_threads = safeMalloc(num_clients * sizeof(client_thread));
     for (unsigned int i = 0; i < num_clients; i++) {
         ct_create_and_start(&(client_threads[i]));
-    }
-
-    //Attend les threads, puis free leur representation de ressources
-    for(int i=0; i<num_clients; i++) {
-        pthread_join(client_threads[i].pt_tid, NULL);
     }
 
     ct_wait_server(num_clients, client_threads);

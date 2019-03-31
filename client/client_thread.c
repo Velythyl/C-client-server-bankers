@@ -30,6 +30,7 @@ unsigned int count_dispatched = 0;  //NOTE: on assume que c'est en reponse a CLO
 // Nombre total de requêtes envoyées.
 unsigned int request_sent = 0;  //NOTE: on assume que c'est le nombre de REQ, pas le nombre de REQ uniques
 
+pthread_mutex_t random_mutex;
 /**
  * Retourne un nb de 0 a high-1
  *
@@ -39,12 +40,28 @@ unsigned int request_sent = 0;  //NOTE: on assume que c'est le nombre de REQ, pa
 int random_bounded(int high) {
     if(high == 0) return 0; //error handling simple
 
+    /*
+     * On doit proteger l'appel a random car random n'est pas thread safe: il se re-seed avec la valeur de retour pour
+     * le prochain appel. Donc, si on ne le protegeait pas, on aurait souvent les memes valeurs dans differentes REQ si
+     * plusieurs clients font l'appel a random() simultanement.
+     *
+     * https://linux.die.net/man/3/random
+     */
+    pthread_mutex_lock(&random_mutex);
     long r = random();
+    pthread_mutex_unlock(&random_mutex);
+
     if(r<0) r= -r;          //abs du random
 
     return (int) (r % high); //safe puisque high est un int, donc on est surs que random % high fitte dans un int
 }
 
+void init_client() {
+    if (pthread_mutex_init(&random_mutex, NULL) != 0) {
+        printf("\n mutex init has failed\n");
+        exit(1);
+    }
+}
 
 /**
  * Envoie une requete REQ dont la tete est head et le corps est request.
@@ -200,7 +217,7 @@ void *ct_code(void *param) {
 
     free(max_ressources), free(used_ressources);
 
-    pthread_exit(NULL);
+    pthread_exit(0);
 }
 
 
@@ -212,8 +229,9 @@ void *ct_code(void *param) {
  */
 void ct_wait_server(int num_clients, client_thread* client_threads) {
 
+    //busy wait en attendant que tous les clients soient CLO
     while(true) {
-        sleep(5);
+        sleep(2);
         int nb_done = 0;
         for (int i = 0; i < num_clients; i++) {
             /*
@@ -242,6 +260,8 @@ void ct_wait_server(int num_clients, client_thread* client_threads) {
         exit(94);
     }
     free(response);
+
+    pthread_mutex_destroy(&random_mutex);
 }
 
 void ct_create_and_start(client_thread *ct) {

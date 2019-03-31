@@ -32,6 +32,8 @@ void ct_wait_server(int num_clients, client_thread* client_threads);
 
 void ct_print_results(FILE *fd, bool verbose);
 
+void init_client();
+
 int c_open_socket();
 
 #endif // CLIENTTHREAD_H
