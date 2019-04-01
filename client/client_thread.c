@@ -194,8 +194,8 @@ void *ct_code(void *param) {
                 request[i + 1 ] = -(used_ressources[i]);    //libere tout ce qu'on avait
 
             } else {                                            //sinon
-                //si positif: de 0 a (max de ressource i +1)-1
-                if(random_bounded(2)) request[i + 1] = random_bounded(max_ressources[i]+1);
+                //si positif: de 0 a (ressources encore possiblement a demander +1)-1
+                if(random_bounded(2)) request[i + 1] = random_bounded((max_ressources[i]-used_ressources[i])+1);
                 //sinon: de 0 a (used i +1)-1
                 else request[i + 1] = -random_bounded(used_ressources[i]+1);
             }
