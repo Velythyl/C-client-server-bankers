@@ -209,7 +209,7 @@ void *ct_code(void *param) {
         free(request);
 
         /* Attendre un petit peu (0s-0.1s) pour simuler le calcul.  */
-        usleep(random() % (100 * 1000));
+        usleep(random_bounded(100 * 1000));
     }
 
     //ici, on a fait toutes nos request et on en est a fermer les clients
