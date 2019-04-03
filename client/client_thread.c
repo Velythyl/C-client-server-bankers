@@ -305,6 +305,9 @@ void ct_print_results(FILE *fd, bool verbose) {
 /**
  * Ouvre un socket et le connecte au serveur.
  *
+ * Inspire du code de open_socket du serveur ainsi que de 
+ * https://www.geeksforgeeks.org/socket-programming-cc/
+ *
  * @return  le socket
  */
 int c_open_socket() {
