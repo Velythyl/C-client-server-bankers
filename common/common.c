@@ -1,7 +1,7 @@
 #include "common.h"
 
 /*
-On s'est vaguement inspirés de https://www.geeksforgeeks.org/socket-programming-cc/ pour le code sur les 
+On s'est vaguement inspires de https://www.geeksforgeeks.org/socket-programming-cc/ pour le code sur les 
 sockets de ce document
 */
 
