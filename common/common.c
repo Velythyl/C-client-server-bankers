@@ -1,5 +1,10 @@
 #include "common.h"
 
+/*
+On s'est vaguement inspirés de https://www.geeksforgeeks.org/socket-programming-cc/ pour le code sur les 
+sockets de ce document
+*/
+
 /**
  * Code pour les operations sur les sockets. Tire et modifie du code de read_socket donne avec ce TP par les
  * demonstrateurs.
