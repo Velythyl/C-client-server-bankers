@@ -1,17 +1,737 @@
 \documentclass[11pt]{article}
 
-\usepackage[letterpaper, margin=0.75in]{geometry}
+\usepackage[letterpaper, margin=2cm]{geometry}
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
 \usepackage[french]{babel}
+\usepackage{tikz}
+\usepackage{pdflscape}
+\usepackage{xcolor}
+\usepackage{enumitem}
 
-\title{Travail pratique \#2 - IFT-2245}
-\author{Moi et L'autre} 
+
+
+\title{\vspace{\fill}\textbf{IFT2245 Rapport TP2}\\[\baselineskip] Charlie \bsc{Gauthier} \\ Maud \bsc{Moerel-Martini}\\[\baselineskip] 1 avril 2019\vspace{\fill}}
+\date{}
+
 \begin{document}
 
 \maketitle
+\newpage
+Pour les futurs références nous prendrons la couleur bleue pour le client et le rouge pour le serveur.\\\\
+\textbf{Lire et comprendre cette donnée:}
+\\\\
+\textsc{cf. Annexe schéma 1}
+\\\\
+Les sockets du serveur et du client s’ouvrent sur le port indiqué en comme premier argument en ligne de commande des deux main.c.
+On comprends que la logique du code suit ce schéma. Le serveur et le client commencent. Le serveur ouvre un socket, puis attend le client.
 
-allo comment ça va?
-%% ¡¡ REMPLIR ICI !!
+
+\begin{enumerate}[label=\alph*.]
+ \item \textcolor{blue}{Le client fait BEGIN et CONF. CONF envoie le nombre de ressources indiquées dans les arguments en ligne de commande du client/main.c.}
+ \item \textcolor{red}{Le serveur reçoit ça. Il prend les ressources indiquées par CONF comme étant les maximums de ressources partagées entre les clients. 
+ Puis, il renvoie ACK pour indiquer que c’est validé. Après, il lance autant de threads qu’indiqué selon l’argument en ligne de commande de server/main.c.}
+ \item \textcolor{blue}{Les petits clients se font créer. Ils envoient leur INIT.}
+ \item Boucle principale:
+  \begin{enumerate}[label =\roman*.]
+   \item \textcolor{red}{Les threads serveur reçoivent ça. Ils prennent les ressources indiquées par INIT comme étant les maximums de ressources du client qui a envoyé le INIT. Ils renvoient ACK pour indiquer que c’est validé.}
+   \item \textcolor{blue}{Les petits clients entrent dans leur boucle principale. Ils envoient autant de REQ qu’indiqué dans les arguments en ligne de commande du client/main.c. Ces REQ sont soit négatifs ou positifs. Si positifs ils vont de 0 à leur maximum de ressources. Si négatifs, ils vont de 0 à leur nombre de ressources utilisées.
+   \\(1) Si c'est la dernière REQ, ils libèrent toutes leurs ressources.}
+   \item \textcolor{red}{Les threads serveur traitent ces REQ avec l’algorithme du banquier. Si la commande ne va pas créer d’interblocage, ils renvoient ACK. Sinon, ils envoient WAIT. Si la commande est tout simplement invalide, ils envoient ERR. }
+   \item \textcolor{blue}{Les petits clients reçoivent ces codes de réponses. Si c’est WAIT, ils attendent le nombre de secondes indiquées par le WAIT et renvoient la REQ. Si c’est ACK, ils se souviennent qu’ils utilisent maintenant (leur ancienne utilisation += la requête) ressources. Si c’est ERR, ils passent à la prochaine requête.}
+  \end{enumerate}
+ \item \textcolor{blue}{Lorsque les petits clients ont terminé d’envoyer toutes leurs REQ (pas nécessairement en même temps), ils envoient CLO}
+ \item \textcolor{red}{Le serveur renvoie ACK si le client qui CLO n’a pas de ressources utilisées et ERR sinon.}
+ \item \textcolor{blue}{Lorsque un petit client a CLO, il pthread\_exit. Lorsque tous les petits clients sont sortis, le client parent envoie END.}
+ \item \textcolor{red}{Le serveur reçoit ce END et envoie un ACK si tous les petits clients ont été fermés avec un CLO. Sinon, il envoie ERR.}\\\\
+ \end{enumerate}
+
+\textbf{Parties importantes du code fourni (voir correspondances aux points en 1):}
+\\\\
+\textsc{cf. Annexe schéma 2}
+\\
+
+\begin{enumerate}[label=\alph*.]
+ \item \textcolor{blue}{Ceci est avant le ct\_code, ou pendant et on s’assure qu’une seule thread envoie cela. Pas de fonction pré-faite pour ceci.}
+ \item \textcolor{red}{St\_init: on y lit BEGIN et CONF et on configure les ressources max du programme. On retourne ACK si tout s’est bien passé.}
+ \item \textcolor{blue}{Ct\_code: c’est dans cette fonction qu’on a la boucle principale des clients, mais avant de commencer cette boucle, il faut faire les INIT. On les envoie au serveur et on écoute la réponse.}
+ \item Boucle principale:
+  \begin{enumerate}[label =\roman*.]
+   \item \textcolor{red}{St\_code: c’est dans cette fonction qu’on a la boucle principale des serveurs. St\_code ne fait que boucler tant que le serveur peut encore recevoir des connections. 
+   Quand on détecte qu’un client se connecte au grand socket principale du serveur (server\_socket\_fd), on “dispatch” le traitement de la connection à st\_process\_requests.
+   Dans st\_process\_requests, on retrouve le code pour le traitement de: INIT, REQ, CLO, END. Si on reçoit d’autres commandes, on retourne une erreur.}
+   \item \textcolor{blue}{Les petits clients entrent dans la partie boucle de ct\_code (boucle principale des clients). Ils envoient autant de REQ qu’indiqué dans les arguments en ligne de commande du client\/main.c. On crée les REQ (positives ou négatives comme mentionné à 1.d.ii) dans ct\_code, puis on “dispatch” le traitement de l’envoie à send\_request.
+   (1) Si c'est la dernière REQ, ils libèrent toutes leurs ressources}
+   \item \textcolor{red}{St\_process\_requests traite ces REQ avec l’algorithme du banquier. Si la commande ne va pas créer d’interblocage, on envoie ACK. Sinon, ils envoient WAIT. Si la commande est tout simplement invalide, ils envoient ERR. }
+   \item \textcolor{blue}{Les petits clients reçoivent ces codes de réponses dans send\_request ou dans ct\_code. Si c’est WAIT, ils attendent le nombre de secondes indiquées par le WAIT et renvoient la REQ. Si c’est ACK, ils se souviennent qu’ils utilisent maintenant (leur ancienne utilisation += la requête) ressources. Si c’est ERR, ils passent à la prochaine requête.}
+   \end{enumerate}
+ \item \textcolor{blue}{Ct\_end: lorsque les petits clients ont terminé d’envoyer toutes leurs REQ (pas nécessairement en même temps), ils envoient CLO dans ct\_end.}
+ \item \textcolor{red}{Encore dans st\_code et st\_process\_requests, le serveur reçoit les CLO et les traire comme décrit dans 1.f.}
+ \item \textcolor{blue}{Fin de ct\_end: on exit le thread client. Le client main attend que tous les clients aient exit, puis entre dans ct\_wait\_server. Il envoie END au server.}
+ \item \textcolor{red}{Encore dans st\_code et st\_process\_requests, le serveur reçoit le END et envoie un ACK si tous les petits clients ont été fermés avec un CLO. Sinon, il envoie ERR.}
+ \item \textcolor{blue}{Lorsque le client main reçoit ce ACK, il sait que le serveur s’est fermé. Il peut donc se fermer lui-même.}\\\\
+ \end{enumerate}
+
+
+\textbf{Compléter le code fourni:}
+\\\\
+\textsc{cf. Annexe schéma 3}
+\\\\
+Points généraux:\\
+\textbf{Client et serveur:}
+on utilise \_\_atomic\_add\_f etch pour incrémenter les counter partagés utilisés dans le journal (documentation) . On s’est aussi inspiré de cette réponse SO pour le memory model à utiliser. Ces opérations atomiques sont beaucoup plus simples à gérer que d’utiliser un mutex pour chaque variable.
+\textbf{Client:}\\
+\begin{description}[font=$\bullet$]
+ \item On a modifié la struct client\_thread: on a ajouté les int* max\_ressources et used\_ressources. Ces tableaux indiquent la quantité de ressources maximales et utilisées, respectivement, des petits clients. Ils sont initialisés aux bonnes valeurs dans ct\_create\_and\_start et dans le début de ct\_code.
+ \item On a ajouté un mutex “random\_mutex”, qui protège les appels à random() car random n'est pas thread safe: il se re-seed avec la valeur de retour pour le prochain appel. Donc, si on ne le protégeait pas, on aurait souvent les mêmes valeurs dans différentes REQ si plusieurs clients font l'appel a random() simultanément
+\end{description}
+\textbf{Serveur:}\\
+$\bullet$ On a créé une nouvelle struct, client. Client comprends simplement m\_ressources et u\_ressources, les ressources maximales et utilisées du client représenté. 
+On a aussi créé des fonctions d’opérations sur les client.
+\begin{description}[font=$\circ$, labelindent=1cm]
+  \item Create\_clients crée (malloc) une variable globale clients**, un tableau de client*. 
+On assume que les ID des clients reçus dans le serveur on été générés séquentiellement dans le client. Autrement dit, on assume que si on reçoit un client d'ID 3000, il y aura AUSSI des clients d'ID de 0 à 3000. Comme ca, on peut facilement générer un tableau pour les clients dont l'index est l'ID: si on veut process un REQ du client 3, on a qu'a accéder à clients[3] et on reçoit le client\* du client 3. Ceci nous évite de chercher le client dans une liste chaînée ou dans un tableau à chaque fois qu'on veut accéder au client X.
+De plus, c'est logique, puisque la façon la plus simple de faire des ID uniques est simplement d'incrémenter un counter dans client\/main.c.
+\item Resize\_clients(int new\_max\_index) s’assure que new\_max\_index est un accès valide selon \\ clients[new\_max\_index]. Si ce ne l’est pas, on agrandit clients.\\
+\textbf{Note: pour les deux points précédents, les client non-init ou fermés sont NULL.}
+\item New\_client(id, ressources) crée un client à clients[id]. On appelle resize\_clients avant pour s’assurer que c’est valide.
+\item Close\_client(index) ferme le client à clients[index] en libérant la mémoire prise par ses int* et par le client lui-même. Puis, on assigne NULL à clients[index] pour indiquer que le client a été fermé.
+\end{description}
+$\bullet$ On a crée les fonctions pour l'algorithme du banquier.
+\begin{description}[font=$\circ$, labelindent=1cm]
+ \item Lock\_bankers verrouille les clients et l’algorithme du banquier (voir le point sur les mutex plus bas). Puis, on retourne l’appel à call\_bankers.
+ \item Call\_bankers gère les états hypothétiques. On y change available et le u\_ressources du client concerné pour faire comme si la REQ avait été acceptée. Puis, on appelle bankers. Si bankers dit que l’état est “safe”, on laisse les changements comme ça. Sinon, on les défait. Dans les deux cas, on retourne le code retourné par bankers.
+ \item Bankers applique l’algorithme du banquier sur un état de available et des clients.
+\end{description}
+$\bullet$ On a ajouté deux mutex, client\_mutex et bankers\_mutex.
+\begin{description}[font=$\circ$, labelindent=1cm]
+ \item Client\_mutex contrôle l’accès aux clients (dans les fonctions d’opérations sur les clients et dans bankers) pour empêcher les conditions de course.
+ \item Bankers\_mutex contrôle l’accès à bankers, ce qui s’assure que l’évaluation des REQ se fasse séquentiellement. Sans cela, on commencerait l’analyse (2) d’une REQ pendant qu’une autre se fait analyser (1) et donc l’état hypothétique de 1 contaminerait l’analyse 2.
+\end{description}
+\textbf{Common:} 
+\begin{description}[font=$\bullet$]
+ \item Le read\_socket fourni avec le TP a été modifié en op\_socket\_code et fait maintenant la lecture et l’écriture sur les sockets.
+ \item On a créé err\_h\_socket qui fait le “error handling” pour l’appel de op\_socket\_code: si on y a écrit\/lu moins que la grosseur de buffer demandée, on traite l’erreur.
+ \item On a créé read\_socket et write\_socket, qui appellent err\_h\_socket avec les bons arguments pour la lecture et l’écriture, respectivement.
+ \item On a créé read\_compound et write\_compound, qui appellent read\_socket et write\_socket, respectivement, de façon à faire la transation sur le socket d’une tête de message suivi d’un corps de message.\\\\
+\end{description}
+
+\begin{enumerate}[label=\alph*.]
+ \item \textcolor{blue}{On a créé init\_server dans client\/main.c. On y envoie et traite la réponse de BEGIN et CONF.}
+ \item \textcolor{red}{St\_init: on y malloc available et on y place le nombre de chaque ressources indiquées par CONF. On y appelle create\_clients.}
+ \item \textcolor{blue}{Ct\_code: avec les INIT on malloc used\_ressources et max\_ressources qui prennent les valeurs maximales et utilisées du client.}
+ \item Boucle principale:
+  \begin{enumerate}[label =\roman*.]
+   \item \textcolor{red}{St\_code n’a presque pas été changé. St\_process\_requests a beaucoup changé. On y a placé un grand switch case qui traite les codes des requests. Si on a autre chose que INIT, REQ, CLO, END, on lance une erreur. Sinon:}
+     \begin{enumerate}
+      \item \textcolor{red}{INIT: on appelle new\_client et on y crée la représentation du client et de ses ressources max.}
+      \item \textcolor{red}{REQ: on appelle lock\_bankers et on retourne un message approprié au client}
+      \item \textcolor{red}{CLO: on vérifie que le client a bien free ses ressources (on envoie ERR sinon), puis appelle close\_client et on envoie ACK.}
+      \item \textcolor{red}{END: on vérifie que tous les clients ont été fermés, on envoie ACK si oui (ERR sinon), puis on ferme le serveur.}
+     \end{enumerate}
+   \item \textcolor{blue}{On génère les REQ comme décrit plus haut. Send\_request fait le traitement du code de retour:}
+    \begin{enumerate}
+     \item \textcolor{blue}{ACK: on change le used\_ressources du thread client (qui nous est passé en paramètre).}
+     \item \textcolor{blue}{WAIT: on attend le nombre de secondes indiqué.}
+     \item \textcolor{blue}{ERR: on ne fait rien}
+     \textcolor{blue}{Puis, ct\_code rappelle la même REQ tant qu’on a pas autre chose que WAIT.}
+    \end{enumerate}
+   \item textcolor{red}{Voir 3.d.i}
+   \item textcolor{blue}{Voir 3.d.ii}
+  \end{enumerate}
+ \item \textcolor{blue}{Ct\_end: voir 2.e. Si on reçoit ERR, on exit.}
+ \item \textcolor{red}{Voir 3.d.i}
+ \item \textcolor{blue}{Dans ct\_wait\_server: on busy wait en attendant que tous les clients soient fermés. Lorsque c’est fait, on sait que le serveur a reçu les CLO de tous les clients, et on envoie END.}
+ \item \textcolor{red}{Encore dans st\_code et st\_process\_requests, le serveur reçoit le END et envoie un ACK si tous les petits clients ont été fermés avec un CLO. Sinon, il envoie ERR.}
+ \item \textcolor{blue}{Lorsque le client main reçoit ce ACK dans ct\_wait\_server, il sait que le serveur s’est fermé. Il peut donc se fermer lui-même.}
+\end{enumerate}
+\newpage
+\centerline{\huge ANNEXE}
+\underline{Légende}
+\begin{tikzpicture}[x=0.75pt,y=0.75pt,yscale=-1,xscale=1]\\\\
+
+%uncomment if require: \path (0,259); %set diagram left start at 0, and has height of 259
+
+%Shape: Parallelogram [id:dp6102867088994157] 
+\draw   (114.69,65.46) -- (227.86,65.46) -- (201.02,114.46) -- (87.86,114.46) -- cycle ;
+%Straight Lines [id:da9658099074782709] 
+\draw    (157.86,222) -- (204.36,222) ;
+
+
+%Curve Lines [id:da8299396814196365] 
+\draw    (157.86,229) .. controls (184.5,231) and (167.36,234) .. (204.36,229) ;
+
+
+%Right Arrow [id:dp38422980897094683] 
+\draw   (157.86,245.75) -- (185.76,245.75) -- (185.76,242.5) -- (204.36,249) -- (185.76,255.5) -- (185.76,252.25) -- (157.86,252.25) -- cycle ;
+
+% Text Node
+\draw  [fill={rgb, 255:red, 255; green, 255; blue, 255 }  ,fill opacity=1 ]  (124.86,4) -- (190.86,4) -- (190.86,26) -- (124.86,26) -- cycle  ;
+\draw (157.86,15) node  [align=left] {Fonction};
+% Text Node
+\draw  [fill={rgb, 255:red, 255; green, 255; blue, 255 }  ,fill opacity=1 ]  (157.86, 45.73) circle [x radius= 154.86, y radius= 12.73]   ;
+\draw (157.86,45.73) node  [align=left] {Strucure en mémoire importante};
+% Text Node
+\draw (157.86,89.96) node  [align=left] {Items protégés\\par un mutex};
+% Text Node
+\draw    (157.86, 165.39) circle [x radius= 42.93, y radius= 42.93]   ;
+\draw (157.86,165.39) node  [align=left] {Boucle\\importante};
+% Text Node
+\draw (103.86,226) node  [align=left] {Fils/processus:};
+% Text Node
+\draw (95.86,249) node  [align=left] {Communications:};
+
+
+\end{tikzpicture}
+
+\tikzset{every picture/.style={line width=0.4pt}} %set default line width to 0.75pt
+\underline{Schéma 1}
+\begin{tikzpicture}[x=0.75pt,y=0.75pt,yscale=-1,xscale=1]
+%uncomment if require: \path (0,477); %set diagram left start at 0, and has height of 477
+
+%Straight Lines [id:da14890182497533977]
+\draw    (165.5,7) -- (165.5,58) ;
+
+
+%Straight Lines [id:da3132286218456424]
+\draw    (495.5,7) -- (495.5,58) ;
+
+
+%Left Arrow [id:dp5457010098983677]
+\draw   (165.5,40.5) -- (297.5,34) -- (297.5,37.25) -- (495.5,37.25) -- (495.5,43.75) -- (297.5,43.75) -- (297.5,47) -- cycle ;
+%Right Arrow [id:dp8819578057625872]
+\draw   (165.5,54.25) -- (363.5,54.25) -- (363.5,51) -- (495.5,57.5) -- (363.5,64) -- (363.5,60.75) -- (165.5,60.75) -- cycle ;
+%Curve Lines [id:da7160938896329037]
+\draw    (142.5,108) .. controls (146.5,73) and (134.5,81) .. (165.5,60.75) ;
+
+
+%Curve Lines [id:da942149609984265]
+\draw    (190.5,108) .. controls (185.5,81) and (200.5,67) .. (165.5,60.75) ;
+
+
+%Straight Lines [id:da3777022113554469]
+\draw    (165.5,60.75) -- (165.5,108) ;
+
+
+%Curve Lines [id:da4464363355190457]
+\draw    (472.5,106) .. controls (476.5,71) and (464.5,79) .. (495.5,58.75) ;
+
+
+%Curve Lines [id:da605307753029523]
+\draw    (520.5,106) .. controls (515.5,79) and (530.5,65) .. (495.5,58.75) ;
+
+
+%Straight Lines [id:da7672184850497616]\begin{landscape}
+\draw    (495.5,58.75) -- (495.5,106) ;
+
+
+%Curve Lines [id:da6690817519959451]
+\draw    (539.5,108) .. controls (534.5,81) and (530.5,65) .. (495.5,58.75) ;
+
+
+%Curve Lines [id:da30474531744843714]
+\draw    (451.5,108) .. controls (455.5,73) and (464.5,79) .. (495.5,58.75) ;
+
+
+%Shape: Circle [id:dp030933362859547175]
+\draw  [color={rgb, 255:red, 255; green, 0; blue, 0 }  ,draw opacity=1 ] (5.69,242.19) .. controls (5.69,153.93) and (77.24,82.38) .. (165.5,82.38) .. controls (253.76,82.38) and (325.31,153.93) .. (325.31,242.19) .. controls (325.31,330.45) and (253.76,402) .. (165.5,402) .. controls (77.24,402) and (5.69,330.45) .. (5.69,242.19) -- cycle ;
+%Shape: Circle [id:dp11513943272939642]
+\draw  [color={rgb, 255:red, 255; green, 0; blue, 0 }  ,draw opacity=1 ] (417.5,216) .. controls (417.5,172.92) and (452.42,138) .. (495.5,138) .. controls (538.58,138) and (573.5,172.92) .. (573.5,216) .. controls (573.5,259.08) and (538.58,294) .. (495.5,294) .. controls (452.42,294) and (417.5,259.08) .. (417.5,216) -- cycle ;
+%Left Arrow [id:dp12309867567771016]
+\draw   (165.5,111.5) -- (297.5,105) -- (297.5,108.25) -- (495.5,108.25) -- (495.5,114.75) -- (297.5,114.75) -- (297.5,118) -- cycle ;
+%Right Arrow [id:dp06265255030031636]
+\draw   (165.5,133.25) -- (363.5,133.25) -- (363.5,130) -- (495.5,136.5) -- (363.5,143) -- (363.5,139.75) -- (165.5,139.75) -- cycle ;
+%Right Arrow [id:dp8386285067903021]
+\draw   (260.5,213) -- (353.5,213) -- (353.5,209) -- (415.5,217) -- (353.5,225) -- (353.5,221) -- (260.5,221) -- cycle ;
+%Left Arrow [id:dp4879154042703371]
+\draw   (261.75,193.5) -- (324.45,187) -- (324.45,190.25) -- (418.5,190.25) -- (418.5,196.75) -- (324.45,196.75) -- (324.45,200) -- cycle ;
+%Left Arrow [id:dp6215024361520458]
+\draw   (165.5,300.5) -- (297.5,294) -- (297.5,297.25) -- (495.5,297.25) -- (495.5,303.75) -- (297.5,303.75) -- (297.5,307) -- cycle ;
+%Right Arrow [id:dp945536553496263]
+\draw   (165.5,313.25) -- (363.5,313.25) -- (363.5,310) -- (495.5,316.5) -- (363.5,323) -- (363.5,319.75) -- (165.5,319.75) -- cycle ;
+%Curve Lines [id:da351175609121237]
+\draw    (518.5,325.25) .. controls (514.5,333.95) and (526.5,331.96) .. (495.5,337) ;
+
+
+%Curve Lines [id:da4971236625673545]
+\draw    (470.5,325.25) .. controls (475.5,331.96) and (460.5,335.45) .. (495.5,337) ;
+
+
+%Straight Lines [id:da675285158072038]
+\draw    (495.5,337) -- (495.5,325.25) ;
+
+
+%Curve Lines [id:da4078501790952549]
+\draw    (451.5,324.75) .. controls (456.5,331.47) and (460.5,335.45) .. (495.5,337) ;
+
+
+%Curve Lines [id:da8364051102228647]
+\draw    (539.5,324.75) .. controls (535.5,333.46) and (526.5,331.96) .. (495.5,337) ;
+
+
+%Curve Lines [id:da45943045227930956]
+\draw    (188.5,390.75) .. controls (184.5,425.75) and (196.5,417.75) .. (165.5,438) ;
+
+
+%Curve Lines [id:da3040895369639356]
+\draw    (140.5,390.75) .. controls (145.5,417.75) and (130.5,431.75) .. (165.5,438) ;
+
+
+%Straight Lines [id:da42362839745489245]
+\draw    (165.5,438) -- (165.5,390.75) ;
+
+
+%Left Arrow [id:dp5772437432420463]
+\draw   (165.5,364.5) -- (297.5,358) -- (297.5,361.25) -- (495.5,361.25) -- (495.5,367.75) -- (297.5,367.75) -- (297.5,371) -- cycle ;
+%Right Arrow [id:dp14855812896329446]
+\draw   (165.5,377.25) -- (363.5,377.25) -- (363.5,374) -- (495.5,380.5) -- (363.5,387) -- (363.5,383.75) -- (165.5,383.75) -- cycle ;
+%Straight Lines [id:da9536275762698714]
+\draw    (495.5,337) -- (495.5,468) ;
+
+
+%Straight Lines [id:da8562293105150554]
+\draw    (165.5,440) -- (165.5,468) ;
+
+
+
+% Text Node
+\draw (330.5,25) node  [align=left] {BEGIN, CONF};
+% Text Node
+\draw (330.5,69) node  [align=left] {ACK};
+% Text Node
+\draw (330.5,99) node  [align=left] {INIT x5};
+% Text Node
+\draw (330.5,125) node  [align=left] {ACK x5};
+% Text Node
+\draw (330.5,176) node  [align=left] {REQ};
+% Text Node
+\draw (330.5,232) node  [align=left] {ACK, ERR ou WAIT};
+% Text Node
+\draw (165.5,191) node  [align=left] {\textcolor[rgb]{0.82,0.01,0.11}{Loop principale du serveur, }\\\textcolor[rgb]{0.82,0.01,0.11}{reçoit les REQ, INIT, CLO, }\\\textcolor[rgb]{0.82,0.01,0.11}{END et les gère}};
+% Text Node
+\draw (500.5,210) node  [align=left] {\textcolor[rgb]{0.82,0.01,0.11}{Loop principale du }\\\textcolor[rgb]{0.82,0.01,0.11}{client, envoie les REQ }\\\textcolor[rgb]{0.82,0.01,0.11}{et reagit aux reponses}};
+% Text Node
+\draw (330.5,289) node  [align=left] {CLO x5};
+% Text Node
+\draw (330.5,328) node  [align=left] {ACK x5};
+% Text Node
+\draw (330.5,353) node  [align=left] {END};
+% Text Node
+\draw (330.5,392) node  [align=left] {ACK};
+
+
+\end{tikzpicture}
+
+
+\tikzset{every picture/.style={line width=0.75pt}} %set default line width to 0.75pt
+\underline{Schéma 2}
+\begin{tikzpicture}[x=0.75pt,y=0.75pt,yscale=-1,xscale=1]
+%uncomment if require: \path (0,467); %set diagram left start at 0, and has height of 467
+
+%Straight Lines [id:da14890182497533977]
+\draw    (164.5,2) -- (164.5,53) ;
+
+
+%Straight Lines [id:da3132286218456424]
+\draw    (494.5,2) -- (494.5,53) ;
+
+
+%Left Arrow [id:dp5457010098983677]
+\draw   (164.5,35.5) -- (296.5,29) -- (296.5,32.25) -- (494.5,32.25) -- (494.5,38.75) -- (296.5,38.75) -- (296.5,42) -- cycle ;
+%Right Arrow [id:dp8819578057625872]
+\draw   (164.5,49.25) -- (362.5,49.25) -- (362.5,46) -- (494.5,52.5) -- (362.5,59) -- (362.5,55.75) -- (164.5,55.75) -- cycle ;
+%Curve Lines [id:da7160938896329037]
+\draw    (141.5,103) .. controls (145.5,68) and (133.5,76) .. (164.5,55.75) ;
+
+
+%Curve Lines [id:da942149609984265]
+\draw    (189.5,103) .. controls (184.5,76) and (199.5,62) .. (164.5,55.75) ;
+
+
+%Straight Lines [id:da3777022113554469]
+\draw    (164.5,55.75) -- (164.5,103) ;
+
+
+%Curve Lines [id:da4464363355190457]
+\draw    (471.5,101) .. controls (475.5,66) and (463.5,74) .. (494.5,53.75) ;
+
+
+%Curve Lines [id:da605307753029523]
+\draw    (519.5,101) .. controls (514.5,74) and (529.5,60) .. (494.5,53.75) ;
+
+
+%Straight Lines [id:da7672184850497616]
+\draw    (494.5,53.75) -- (494.5,101) ;
+
+
+%Curve Lines [id:da6690817519959451]
+\draw    (538.5,103) .. controls (533.5,76) and (529.5,60) .. (494.5,53.75) ;
+
+
+%Curve Lines [id:da30474531744843714]
+\draw    (450.5,103) .. controls (454.5,68) and (463.5,74) .. (494.5,53.75) ;
+
+
+%Shape: Circle [id:dp030933362859547175]
+\draw  [color={rgb, 255:red, 255; green, 0; blue, 0 }  ,draw opacity=1 ] (4.69,237.19) .. controls (4.69,148.93) and (76.24,77.38) .. (164.5,77.38) .. controls (252.76,77.38) and (324.31,148.93) .. (324.31,237.19) .. controls (324.31,325.45) and (252.76,397) .. (164.5,397) .. controls (76.24,397) and (4.69,325.45) .. (4.69,237.19) -- cycle ;
+%Shape: Circle [id:dp11513943272939642]
+\draw  [color={rgb, 255:red, 255; green, 0; blue, 0 }  ,draw opacity=1 ] (416.5,211) .. controls (416.5,167.92) and (451.42,133) .. (494.5,133) .. controls (537.58,133) and (572.5,167.92) .. (572.5,211) .. controls (572.5,254.08) and (537.58,289) .. (494.5,289) .. controls (451.42,289) and (416.5,254.08) .. (416.5,211) -- cycle ;
+%Left Arrow [id:dp12309867567771016]
+\draw   (164.5,106.5) -- (296.5,100) -- (296.5,103.25) -- (494.5,103.25) -- (494.5,109.75) -- (296.5,109.75) -- (296.5,113) -- cycle ;
+%Right Arrow [id:dp06265255030031636]
+\draw   (164.5,128.25) -- (362.5,128.25) -- (362.5,125) -- (494.5,131.5) -- (362.5,138) -- (362.5,134.75) -- (164.5,134.75) -- cycle ;
+%Right Arrow [id:dp8386285067903021]
+\draw   (259.5,208) -- (352.5,208) -- (352.5,204) -- (414.5,212) -- (352.5,220) -- (352.5,216) -- (259.5,216) -- cycle ;
+%Left Arrow [id:dp4879154042703371]
+\draw   (260.75,188.5) -- (323.45,182) -- (323.45,185.25) -- (417.5,185.25) -- (417.5,191.75) -- (323.45,191.75) -- (323.45,195) -- cycle ;
+%Left Arrow [id:dp6215024361520458]
+\draw   (164.5,295.5) -- (296.5,289) -- (296.5,292.25) -- (494.5,292.25) -- (494.5,298.75) -- (296.5,298.75) -- (296.5,302) -- cycle ;
+%Right Arrow [id:dp945536553496263]
+\draw   (164.5,308.25) -- (362.5,308.25) -- (362.5,305) -- (494.5,311.5) -- (362.5,318) -- (362.5,314.75) -- (164.5,314.75) -- cycle ;
+%Curve Lines [id:da351175609121237]
+\draw    (517.5,320.25) .. controls (513.5,328.95) and (525.5,326.96) .. (494.5,332) ;
+
+
+%Curve Lines [id:da4971236625673545]
+\draw    (469.5,320.25) .. controls (474.5,326.96) and (459.5,330.45) .. (494.5,332) ;
+
+
+%Straight Lines [id:da675285158072038]
+\draw    (494.5,332) -- (494.5,320.25) ;
+
+
+%Curve Lines [id:da4078501790952549]
+\draw    (450.5,319.75) .. controls (455.5,326.47) and (459.5,330.45) .. (494.5,332) ;
+
+
+%Curve Lines [id:da8364051102228647]
+\draw    (538.5,319.75) .. controls (534.5,328.46) and (525.5,326.96) .. (494.5,332) ;
+
+
+%Curve Lines [id:da45943045227930956]
+\draw    (187.5,385.75) .. controls (183.5,420.75) and (195.5,412.75) .. (164.5,433) ;
+
+
+%Curve Lines [id:da3040895369639356]
+\draw    (139.5,385.75) .. controls (144.5,412.75) and (129.5,426.75) .. (164.5,433) ;
+
+
+%Straight Lines [id:da42362839745489245]
+\draw    (164.5,433) -- (164.5,385.75) ;
+
+
+%Left Arrow [id:dp5772437432420463]
+\draw   (164.5,359.5) -- (296.5,353) -- (296.5,356.25) -- (494.5,356.25) -- (494.5,362.75) -- (296.5,362.75) -- (296.5,366) -- cycle ;
+%Right Arrow [id:dp14855812896329446]
+\draw   (164.5,372.25) -- (362.5,372.25) -- (362.5,369) -- (494.5,375.5) -- (362.5,382) -- (362.5,378.75) -- (164.5,378.75) -- cycle ;
+%Straight Lines [id:da9536275762698714]
+\draw    (494.5,332) -- (494.5,463) ;
+
+
+%Straight Lines [id:da8562293105150554]
+\draw    (164.5,435) -- (164.5,463) ;
+
+
+
+% Text Node
+\draw (329.5,20) node  [align=left] {BEGIN, CONF};
+% Text Node
+\draw (329.5,64) node  [align=left] {ACK};
+% Text Node
+\draw (329.5,94) node  [align=left] {INIT x5};
+% Text Node
+\draw (329.5,120) node  [align=left] {ACK x5};
+% Text Node
+\draw (329.5,171) node  [align=left] {REQ};
+% Text Node
+\draw (329.5,227) node  [align=left] {ACK, ERR ou WAIT};
+% Text Node
+\draw (164.5,186) node  [align=left] {\textcolor[rgb]{0.82,0.01,0.11}{Loop principale du serveur, }\\\textcolor[rgb]{0.82,0.01,0.11}{reçoit les REQ, INIT, CLO, }\\\textcolor[rgb]{0.82,0.01,0.11}{END et les gère}};
+% Text Node
+\draw (499.5,205) node  [align=left] {\textcolor[rgb]{0.82,0.01,0.11}{Loop principale du }\\\textcolor[rgb]{0.82,0.01,0.11}{client, envoie les REQ }\\\textcolor[rgb]{0.82,0.01,0.11}{et reagit aux reponses}};
+% Text Node
+\draw (329.5,284) node  [align=left] {CLO x5};
+% Text Node
+\draw (329.5,323) node  [align=left] {ACK x5};
+% Text Node
+\draw (329.5,348) node  [align=left] {END};
+% Text Node
+\draw (329.5,387) node  [align=left] {ACK};
+% Text Node
+\draw  [fill={rgb, 255:red, 255; green, 255; blue, 255 }  ,fill opacity=1 ]  (141,24.5) -- (188,24.5) -- (188,46.5) -- (141,46.5) -- cycle  ;
+\draw (164.5,35.5) node  [align=left] {st\_init};
+% Text Node
+\draw  [fill={rgb, 255:red, 255; green, 255; blue, 255 }  ,fill opacity=1 ]  (134.59,66.38) -- (195.59,66.38) -- (195.59,88.38) -- (134.59,88.38) -- cycle  ;
+\draw (165.09,77.38) node  [align=left] {st\_code};
+% Text Node
+\draw  [fill={rgb, 255:red, 255; green, 255; blue, 255 }  ,fill opacity=1 ]  (464.59,66.38) -- (525.59,66.38) -- (525.59,88.38) -- (464.59,88.38) -- cycle  ;
+\draw (495.09,77.38) node  [align=left] {ct\_code};
+% Text Node
+\draw  [fill={rgb, 255:red, 255; green, 255; blue, 255 }  ,fill opacity=1 ]  (91.5,226.19) -- (237.5,226.19) -- (237.5,248.19) -- (91.5,248.19) -- cycle  ;
+\draw (164.5,237.19) node  [align=left] {st\_process\_requests};
+% Text Node
+\draw  [fill={rgb, 255:red, 255; green, 255; blue, 255 }  ,fill opacity=1 ]  (445.27,153.19) -- (544.27,153.19) -- (544.27,175.19) -- (445.27,175.19) -- cycle  ;
+\draw (494.77,164.19) node  [align=left] {send\_request};
+% Text Node
+\draw  [fill={rgb, 255:red, 255; green, 255; blue, 255 }  ,fill opacity=1 ]  (468,300.5) -- (521,300.5) -- (521,322.5) -- (468,322.5) -- cycle  ;
+\draw (494.5,311.5) node  [align=left] {ct\_end};
+% Text Node
+\draw  [fill={rgb, 255:red, 255; green, 255; blue, 255 }  ,fill opacity=1 ]  (442,351.75) -- (547,351.75) -- (547,373.75) -- (442,373.75) -- cycle  ;
+\draw (494.5,362.75) node  [align=left] {ct\_wait\_server};
+
+
+\end{tikzpicture}
+\begin{landscape}
+\newgeometry{top=10cm, left= 1.5cm} 
+
+\begin{tikzpicture}[x=0.75pt,y=0.75pt,yscale=-1,xscale=1]
+
+%uncomment if require: \path (0,467); %set diagram left start at 0, and has height of 467
+
+%Straight Lines [id:da14890182497533977]
+\draw    (425.5,0) -- (425.5,51) ;
+
+
+%Straight Lines [id:da3132286218456424]
+\draw    (755.5,0) -- (755.5,51) ;
+
+
+%Left Arrow [id:dp5457010098983677]
+\draw   (425.5,33.5) -- (557.5,27) -- (557.5,30.25) -- (755.5,30.25) -- (755.5,36.75) -- (557.5,36.75) -- (557.5,40) -- cycle ;
+%Right Arrow [id:dp8819578057625872]
+\draw   (425.5,47.25) -- (623.5,47.25) -- (623.5,44) -- (755.5,50.5) -- (623.5,57) -- (623.5,53.75) -- (425.5,53.75) -- cycle ;
+%Curve Lines [id:da7160938896329037]
+\draw    (402.5,101) .. controls (406.5,66) and (394.5,74) .. (425.5,53.75) ;
+
+
+%Curve Lines [id:da942149609984265]
+\draw    (450.5,101) .. controls (445.5,74) and (460.5,60) .. (425.5,53.75) ;
+
+
+%Straight Lines [id:da3777022113554469]
+\draw    (425.5,53.75) -- (425.5,101) ;
+
+
+%Curve Lines [id:da4464363355190457]
+\draw    (732.5,99) .. controls (736.5,64) and (724.5,72) .. (755.5,51.75) ;
+
+
+%Curve Lines [id:da605307753029523]
+\draw    (780.5,99) .. controls (775.5,72) and (790.5,58) .. (755.5,51.75) ;
+
+
+%Straight Lines [id:da7672184850497616]
+\draw    (755.5,51.75) -- (755.5,99) ;
+
+
+%Curve Lines [id:da6690817519959451]
+\draw    (799.5,101) .. controls (794.5,74) and (790.5,58) .. (755.5,51.75) ;
+
+
+%Curve Lines [id:da30474531744843714]
+\draw    (711.5,101) .. controls (715.5,66) and (724.5,72) .. (755.5,51.75) ;
+
+
+%Shape: Circle [id:dp030933362859547175]
+\draw  [color={rgb, 255:red, 255; green, 0; blue, 0 }  ,draw opacity=1 ] (265.69,235.19) .. controls (265.69,146.93) and (337.24,75.38) .. (425.5,75.38) .. controls (513.76,75.38) and (585.31,146.93) .. (585.31,235.19) .. controls (585.31,323.45) and (513.76,395) .. (425.5,395) .. controls (337.24,395) and (265.69,323.45) .. (265.69,235.19) -- cycle ;
+%Shape: Circle [id:dp11513943272939642]
+\draw  [color={rgb, 255:red, 255; green, 0; blue, 0 }  ,draw opacity=1 ] (677.5,209) .. controls (677.5,165.92) and (712.42,131) .. (755.5,131) .. controls (798.58,131) and (833.5,165.92) .. (833.5,209) .. controls (833.5,252.08) and (798.58,287) .. (755.5,287) .. controls (712.42,287) and (677.5,252.08) .. (677.5,209) -- cycle ;
+%Left Arrow [id:dp12309867567771016]
+\draw   (425.5,104.5) -- (557.5,98) -- (557.5,101.25) -- (755.5,101.25) -- (755.5,107.75) -- (557.5,107.75) -- (557.5,111) -- cycle ;
+%Right Arrow [id:dp06265255030031636]
+\draw   (425.5,126.25) -- (623.5,126.25) -- (623.5,123) -- (755.5,129.5) -- (623.5,136) -- (623.5,132.75) -- (425.5,132.75) -- cycle ;
+%Right Arrow [id:dp8386285067903021]
+\draw   (520.5,206) -- (613.5,206) -- (613.5,202) -- (675.5,210) -- (613.5,218) -- (613.5,214) -- (520.5,214) -- cycle ;
+%Left Arrow [id:dp4879154042703371]
+\draw   (521.75,186.5) -- (584.45,180) -- (584.45,183.25) -- (678.5,183.25) -- (678.5,189.75) -- (584.45,189.75) -- (584.45,193) -- cycle ;
+%Left Arrow [id:dp6215024361520458]
+\draw   (425.5,293.5) -- (557.5,287) -- (557.5,290.25) -- (755.5,290.25) -- (755.5,296.75) -- (557.5,296.75) -- (557.5,300) -- cycle ;
+%Right Arrow [id:dp945536553496263]
+\draw   (425.5,306.25) -- (623.5,306.25) -- (623.5,303) -- (755.5,309.5) -- (623.5,316) -- (623.5,312.75) -- (425.5,312.75) -- cycle ;
+%Curve Lines [id:da351175609121237]
+\draw    (778.5,318.25) .. controls (774.5,326.95) and (786.5,324.96) .. (755.5,330) ;
+
+
+%Curve Lines [id:da4971236625673545]
+\draw    (730.5,318.25) .. controls (735.5,324.96) and (720.5,328.45) .. (755.5,330) ;
+
+
+%Straight Lines [id:da675285158072038]
+\draw    (755.5,330) -- (755.5,318.25) ;
+
+
+%Curve Lines [id:da4078501790952549]
+\draw    (711.5,317.75) .. controls (716.5,324.47) and (720.5,328.45) .. (755.5,330) ;
+
+
+%Curve Lines [id:da8364051102228647]
+\draw    (799.5,317.75) .. controls (795.5,326.46) and (786.5,324.96) .. (755.5,330) ;
+
+
+%Curve Lines [id:da45943045227930956]
+\draw    (448.5,383.75) .. controls (444.5,418.75) and (456.5,410.75) .. (425.5,431) ;
+
+
+%Curve Lines [id:da3040895369639356]
+\draw    (400.5,383.75) .. controls (405.5,410.75) and (390.5,424.75) .. (425.5,431) ;
+
+
+%Straight Lines [id:da42362839745489245]
+\draw    (425.5,431) -- (425.5,383.75) ;
+
+
+%Left Arrow [id:dp5772437432420463]
+\draw   (425.5,357.5) -- (557.5,351) -- (557.5,354.25) -- (755.5,354.25) -- (755.5,360.75) -- (557.5,360.75) -- (557.5,364) -- cycle ;
+%Right Arrow [id:dp14855812896329446]
+\draw   (425.5,370.25) -- (623.5,370.25) -- (623.5,367) -- (755.5,373.5) -- (623.5,380) -- (623.5,376.75) -- (425.5,376.75) -- cycle ;
+%Straight Lines [id:da9536275762698714]
+\draw    (755.5,330) -- (755.5,461) ;
+
+
+%Straight Lines [id:da8562293105150554]
+\draw    (425.5,433) -- (425.5,461) ;
+
+
+%Shape: Parallelogram [id:dp8577788554362042]
+\draw   (60.89,57) -- (391.5,57) -- (353.11,139) -- (22.5,139) -- cycle ;
+%Shape: Parallelogram [id:dp05901508590425397]
+\draw   (36.16,57) -- (391.5,57) -- (357.84,213) -- (2.5,213) -- cycle ;
+%Straight Lines [id:da8547497139461975]
+\draw    (155.5,182) -- (111.81,131.51) ;
+\draw [shift={(110.5,130)}, rotate = 409.13] [color={rgb, 255:red, 0; green, 0; blue, 0 }  ][line width=0.75]    (10.93,-3.29) .. controls (6.95,-1.4) and (3.31,-0.3) .. (0,0) .. controls (3.31,0.3) and (6.95,1.4) .. (10.93,3.29)   ;
+
+%Straight Lines [id:da9632087459709708]
+\draw    (262.5,77.38) -- (237.5,77.38) ;
+\draw [shift={(235.5,77.38)}, rotate = 360] [color={rgb, 255:red, 0; green, 0; blue, 0 }  ][line width=0.75]    (10.93,-3.29) .. controls (6.95,-1.4) and (3.31,-0.3) .. (0,0) .. controls (3.31,0.3) and (6.95,1.4) .. (10.93,3.29)   ;
+
+%Straight Lines [id:da8241922367566896]
+\draw    (280.5,118.38) -- (255.5,118.38) ;
+\draw [shift={(253.5,118.38)}, rotate = 360] [color={rgb, 255:red, 0; green, 0; blue, 0 }  ][line width=0.75]    (10.93,-3.29) .. controls (6.95,-1.4) and (3.31,-0.3) .. (0,0) .. controls (3.31,0.3) and (6.95,1.4) .. (10.93,3.29)   ;
+
+%Straight Lines [id:da2837504063430827]
+\draw    (161.5,118.38) -- (136.5,118.38) ;
+\draw [shift={(134.5,118.38)}, rotate = 360] [color={rgb, 255:red, 0; green, 0; blue, 0 }  ][line width=0.75]    (10.93,-3.29) .. controls (6.95,-1.4) and (3.31,-0.3) .. (0,0) .. controls (3.31,0.3) and (6.95,1.4) .. (10.93,3.29)   ;
+
+%Straight Lines [id:da9127512875077435]
+\draw    (402.5,33) -- (250.5,33) ;
+\draw [shift={(248.5,33)}, rotate = 360] [color={rgb, 255:red, 0; green, 0; blue, 0 }  ][line width=0.75]    (10.93,-3.29) .. controls (6.95,-1.4) and (3.31,-0.3) .. (0,0) .. controls (3.31,0.3) and (6.95,1.4) .. (10.93,3.29)   ;
+
+%Straight Lines [id:da6679774957726399]
+\draw    (402.5,33) -- (365.8,75.86) ;
+\draw [shift={(364.5,77.38)}, rotate = 310.57] [color={rgb, 255:red, 0; green, 0; blue, 0 }  ][line width=0.75]    (10.93,-3.29) .. controls (6.95,-1.4) and (3.31,-0.3) .. (0,0) .. controls (3.31,0.3) and (6.95,1.4) .. (10.93,3.29)   ;
+
+%Straight Lines [id:da9929416515741649]
+\draw    (266.5,195) -- (253.5,194.13) ;
+\draw [shift={(251.5,194)}, rotate = 363.81] [color={rgb, 255:red, 0; green, 0; blue, 0 }  ][line width=0.75]    (10.93,-3.29) .. controls (6.95,-1.4) and (3.31,-0.3) .. (0,0) .. controls (3.31,0.3) and (6.95,1.4) .. (10.93,3.29)   ;
+
+%Straight Lines [id:da18503437095275665]
+\draw    (163.5,192.38) -- (138.5,192.38) ;
+\draw [shift={(136.5,192.38)}, rotate = 360] [color={rgb, 255:red, 0; green, 0; blue, 0 }  ][line width=0.75]    (10.93,-3.29) .. controls (6.95,-1.4) and (3.31,-0.3) .. (0,0) .. controls (3.31,0.3) and (6.95,1.4) .. (10.93,3.29)   ;
+
+%Straight Lines [id:da12418776542941656]
+\draw    (105.5,91) -- (105.5,107) ;
+\draw [shift={(105.5,109)}, rotate = 270] [color={rgb, 255:red, 0; green, 0; blue, 0 }  ][line width=0.75]    (10.93,-3.29) .. controls (6.95,-1.4) and (3.31,-0.3) .. (0,0) .. controls (3.31,0.3) and (6.95,1.4) .. (10.93,3.29)   ;
+
+%Straight Lines [id:da6528154022060308]
+\draw    (521.75,186.5) -- (364.5,192.92) ;
+\draw [shift={(362.5,193)}, rotate = 357.65999999999997] [color={rgb, 255:red, 0; green, 0; blue, 0 }  ][line width=0.75]    (10.93,-3.29) .. controls (6.95,-1.4) and (3.31,-0.3) .. (0,0) .. controls (3.31,0.3) and (6.95,1.4) .. (10.93,3.29)   ;
+
+%Straight Lines [id:da8651897811197162]
+\draw    (134.5,118.38) -- (202.15,90.76) ;
+\draw [shift={(204,90)}, rotate = 517.79] [color={rgb, 255:red, 0; green, 0; blue, 0 }  ][line width=0.75]    (10.93,-3.29) .. controls (6.95,-1.4) and (3.31,-0.3) .. (0,0) .. controls (3.31,0.3) and (6.95,1.4) .. (10.93,3.29)   ;
+
+%Straight Lines [id:da33117514054768127]
+\draw    (834.5,203) -- (855.5,203) ;
+\draw [shift={(857.5,203)}, rotate = 180] [color={rgb, 255:red, 0; green, 0; blue, 0 }  ][line width=0.75]    (10.93,-3.29) .. controls (6.95,-1.4) and (3.31,-0.3) .. (0,0) .. controls (3.31,0.3) and (6.95,1.4) .. (10.93,3.29)   ;
+
+
+% Text Node
+\draw (590.5,18) node  [align=left] {BEGIN, CONF};
+% Text Node
+\draw (590.5,62) node  [align=left] {ACK};
+% Text Node
+\draw (590.5,92) node  [align=left] {INIT x5};
+% Text Node
+\draw (590.5,118) node  [align=left] {ACK x5};
+% Text Node
+\draw (590.5,169) node  [align=left] {REQ};
+% Text Node
+\draw (590.5,225) node  [align=left] {ACK, ERR ou WAIT};
+% Text Node
+\draw (460.5,164) node  [align=left] {\textcolor[rgb]{0.82,0.01,0.11}{Loop principale du serveur, }\\\textcolor[rgb]{0.82,0.01,0.11}{reçoit les REQ, INIT, CLO, }\\\textcolor[rgb]{0.82,0.01,0.11}{END et les gère}};
+% Text Node
+\draw (760.5,203) node  [align=left] {\textcolor[rgb]{0.82,0.01,0.11}{Loop principale du }\\\textcolor[rgb]{0.82,0.01,0.11}{client, envoie les REQ }\\\textcolor[rgb]{0.82,0.01,0.11}{et reagit aux reponses}};
+% Text Node
+\draw (590.5,282) node  [align=left] {CLO x5};
+% Text Node
+\draw (590.5,321) node  [align=left] {ACK x5};
+% Text Node
+\draw (590.5,346) node  [align=left] {END};
+% Text Node
+\draw (590.5,385) node  [align=left] {ACK};
+% Text Node
+\draw  [fill={rgb, 255:red, 255; green, 255; blue, 255 }  ,fill opacity=1 ]  (402,22.5) -- (449,22.5) -- (449,44.5) -- (402,44.5) -- cycle  ;
+\draw (425.5,33.5) node  [align=left] {st\_init};
+% Text Node
+\draw  [fill={rgb, 255:red, 255; green, 255; blue, 255 }  ,fill opacity=1 ]  (395.59,64.38) -- (456.59,64.38) -- (456.59,86.38) -- (395.59,86.38) -- cycle  ;
+\draw (426.09,75.38) node  [align=left] {st\_code};
+% Text Node
+\draw  [fill={rgb, 255:red, 255; green, 255; blue, 255 }  ,fill opacity=1 ]  (725.59,64.38) -- (786.59,64.38) -- (786.59,86.38) -- (725.59,86.38) -- cycle  ;
+\draw (756.09,75.38) node  [align=left] {ct\_code};
+% Text Node
+\draw  [fill={rgb, 255:red, 255; green, 255; blue, 255 }  ,fill opacity=1 ]  (352.5,224.19) -- (498.5,224.19) -- (498.5,246.19) -- (352.5,246.19) -- cycle  ;
+\draw (425.5,235.19) node  [align=left] {st\_process\_requests};
+% Text Node
+\draw  [fill={rgb, 255:red, 255; green, 255; blue, 255 }  ,fill opacity=1 ]  (706.27,151.19) -- (805.27,151.19) -- (805.27,173.19) -- (706.27,173.19) -- cycle  ;
+\draw (755.77,162.19) node  [align=left] {send\_request};
+% Text Node
+\draw  [fill={rgb, 255:red, 255; green, 255; blue, 255 }  ,fill opacity=1 ]  (729,298.5) -- (782,298.5) -- (782,320.5) -- (729,320.5) -- cycle  ;
+\draw (755.5,309.5) node  [align=left] {ct\_end};
+% Text Node
+\draw  [fill={rgb, 255:red, 255; green, 255; blue, 255 }  ,fill opacity=1 ]  (703,349.75) -- (808,349.75) -- (808,371.75) -- (703,371.75) -- cycle  ;
+\draw (755.5,360.75) node  [align=left] {ct\_wait\_server};
+% Text Node
+\draw  [fill={rgb, 255:red, 255; green, 255; blue, 255 }  ,fill opacity=1 ]  (204, 33.5) circle [x radius= 44.55, y radius= 12.73]   ;
+\draw (204,33.5) node  [align=left] {available};
+% Text Node
+\draw  [fill={rgb, 255:red, 255; green, 255; blue, 255 }  ,fill opacity=1 ]  (263.5,66.38) -- (364.5,66.38) -- (364.5,88.38) -- (263.5,88.38) -- cycle  ;
+\draw (314,77.38) node  [align=left] {create\_clients};
+% Text Node
+\draw  [fill={rgb, 255:red, 255; green, 255; blue, 255 }  ,fill opacity=1 ]  (204, 77.38) circle [x radius= 33.23, y radius= 12.73]   ;
+\draw (204,77.38) node  [align=left] {clients};
+% Text Node
+\draw  [fill={rgb, 255:red, 255; green, 255; blue, 255 }  ,fill opacity=1 ]  (274.5,107) -- (353.5,107) -- (353.5,129) -- (274.5,129) -- cycle  ;
+\draw (314,118) node  [align=left] {new\_client};
+% Text Node
+\draw  [fill={rgb, 255:red, 255; green, 255; blue, 255 }  ,fill opacity=1 ]  (154.5,107) -- (253.5,107) -- (253.5,129) -- (154.5,129) -- cycle  ;
+\draw (204,118) node  [align=left] {resize\_clients};
+% Text Node
+\draw  [fill={rgb, 255:red, 255; green, 255; blue, 255 }  ,fill opacity=1 ]  (105, 118) circle [x radius= 27.58, y radius= 12.73]   ;
+\draw (105,118) node  [align=left] {client};
+% Text Node
+\draw  [color={rgb, 255:red, 208; green, 2; blue, 27 }  ,draw opacity=1 ][fill={rgb, 255:red, 255; green, 255; blue, 255 }  ,fill opacity=1 ]  (271,292) -- (357,292) -- (357,314) -- (271,314) -- cycle  ;
+\draw (314,303) node  [align=left] {close\_client};
+% Text Node
+\draw  [fill={rgb, 255:red, 255; green, 255; blue, 255 }  ,fill opacity=1 ]  (266,182) -- (362,182) -- (362,204) -- (266,204) -- cycle  ;
+\draw (314,193) node  [align=left] {lock\_bankers};
+% Text Node
+\draw  [fill={rgb, 255:red, 255; green, 255; blue, 255 }  ,fill opacity=1 ]  (158,182) -- (250,182) -- (250,204) -- (158,204) -- cycle  ;
+\draw (204,193) node  [align=left] {call\_bankers};
+% Text Node
+\draw  [fill={rgb, 255:red, 255; green, 255; blue, 255 }  ,fill opacity=1 ]  (74.5,182) -- (135.5,182) -- (135.5,204) -- (74.5,204) -- cycle  ;
+\draw (105,193) node  [align=left] {bankers};
+% Text Node
+\draw  [color={rgb, 255:red, 208; green, 2; blue, 27 }  ,draw opacity=1 ][fill={rgb, 255:red, 255; green, 255; blue, 255 }  ,fill opacity=1 ]  (62,66.38) -- (148,66.38) -- (148,88.38) -- (62,88.38) -- cycle  ;
+\draw (105,77.38) node  [align=left] {close\_client};
+% Text Node
+\draw  [fill={rgb, 255:red, 255; green, 255; blue, 255 }  ,fill opacity=1 ]  (918.36, 203) circle [x radius= 63.64, y radius= 12.73]   ;
+\draw (918.36,203) node  [align=left] {used\_ressources};
+
+
+\end{tikzpicture}
+\underline{Schéma 3}
+\restoregeometry
+\end{landscape}
+
 
 \end{document}
